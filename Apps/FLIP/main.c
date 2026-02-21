@@ -120,7 +120,7 @@ int main(void)
 
         for (int i=0;i<20;i++){
 
-            ParticleIntegrate(_IQ(50), _IQ(9.8f));
+            ParticleIntegrate(_IQ(16U), _IQ(9.8f));
             PushParticlesApart(PUSH_ITER);
             particles_to_grid();
             density_update();
@@ -131,7 +131,18 @@ int main(void)
 
         for (int i=0;i<70;i++){
 
-            ParticleIntegrate(_IQ(-0.5), _IQ(9.8f));
+            ParticleIntegrate(_IQ(-0.5f), _IQ(9));
+            PushParticlesApart(PUSH_ITER);
+            particles_to_grid();
+            density_update();
+            compute_grid_forces(GRID_ITER);
+            grid_to_particles();
+            Show();
+        }
+
+        for (int i=0;i<20;i++){
+
+            ParticleIntegrate(_IQ(-10U), _IQ(9.8f));
             PushParticlesApart(PUSH_ITER);
             particles_to_grid();
             density_update();
@@ -143,7 +154,7 @@ int main(void)
         int acce = 0;
         for (int i=0;i<800;i++){
             acce = (GPIO_ReadInputDataBit(GPIOA,GPIO_Pin_10) == Bit_SET) ? 5 : -5 ;
-            ParticleIntegrate(_IQ(acce), _IQ(9.8f));
+            ParticleIntegrate(_IQ(acce), _IQ(4));
             PushParticlesApart(PUSH_ITER);
             particles_to_grid();
             density_update();

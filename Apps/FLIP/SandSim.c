@@ -1,6 +1,5 @@
 #include "SandSim.h"
 
-char visual_buffer[CellNumY][CellNumX+1];
 uint8_t screen[32];
 _iq invertSpacing;
 
@@ -379,11 +378,13 @@ void particles_to_grid(void) {
         }
     }
 }
-
+uint8_t ff = 99;
 void compute_grid_forces(unsigned int nIters) {
     //memset(pressure, 0, sizeof(pressure));
     memcpy(uPrev, uVel, sizeof(uVel));
     memcpy(vPrev, vVel, sizeof(vVel));
+
+
 
     //const _iq cp = _IQdiv(_IQmpy(_IQ(1000.0), Spacing), dt);
 
@@ -511,25 +512,6 @@ void screen_update() {
             
         }
     }    
-}
-
-void visualize_grid() {
-    //显示
-    
-    // 根据网格类型直接显示
-    for (int y = 0; y < CellNumY; y++) {
-        for (int x = 0; x < CellNumX; x++) {
-            unsigned int cell = cellType[INDEX(x, y)];
-            char symbol = '-';
-            if (cell == FLUID_CELL) {
-                symbol = 'x';
-            } else if (cell == SOLID_CELL) {
-                symbol = '#';
-            }
-            visual_buffer[y][x] = symbol;
-        }
-        visual_buffer[y][CellNumX] = '\0';
-    }
 }
 
 void printLocation(unsigned int n) {

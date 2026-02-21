@@ -98,7 +98,7 @@ ASFLAGS += -MMD -MP -MF"$(@:%.o=%.d)" -MT"$(@)"
 
 
 # libraries
-LIBS = -lprintf -lIQmath_RV32
+LIBS = -lprintfloat -lIQmath_RV32
 LIBDIR = 
 LDFLAGS = $(ARCH)  $(LIBDIR) $(PERIFLIB_SOURCES)
 
