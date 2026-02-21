@@ -1,0 +1,62 @@
+# Prerequisites
+*.d
+
+# Object files
+*.o
+*.ko
+*.obj
+*.elf
+
+# Linker output
+*.ilk
+*.map
+*.exp
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Libraries
+# we actually need libs for BLE.
+
+# Shared objects (inc. Windows DLLs)
+*.dll
+*.so
+*.so.*
+*.dylib
+
+# files of the ISP tool, needed for flashing.
+!CH343PT.DLL
+!WCH55xISPDLL.dll
+
+
+# Executables
+# *.exe
+*.out
+*.app
+*.i*86
+*.x86_64
+*.hex
+
+!WCHISPTool_CH57x-59x.exe
+
+# Debug files
+*.dSYM/
+*.su
+*.idb
+*.pdb
+
+# Kernel Module Compile Results
+*.mod*
+*.cmd
+.tmp_versions/
+modules.order
+Module.symvers
+Mkfile.old
+dkms.conf
+
+#bear outputs
+compile_commands.json
+.cache
+objs
+.vscode
