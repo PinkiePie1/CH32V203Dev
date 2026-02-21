@@ -26,8 +26,9 @@
 
 /* Global define */
 
-#define PUSH_ITER 2
-#define GRID_ITER 18
+#define PUSH_ITER 1
+#define GRID_ITER 9
+uint8_t ticks=0;
 /* Global Variable */
 
 void InitGPIO(void)
@@ -39,30 +40,13 @@ void InitGPIO(void)
     GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IN_FLOATING;
     GPIO_Init(GPIOA, &GPIO_InitStructure);
 
-    GPIO_InitStructure.GPIO_Pin = SDA_PIN;
-    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
-    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_Out_OD;
-    GPIO_Init(GPIOA, &GPIO_InitStructure);
-
-    GPIO_InitStructure.GPIO_Pin = SCL_PIN | GPIO_Pin_8;
-    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
-    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_Out_PP;
-    GPIO_Init(GPIOA, &GPIO_InitStructure);
-    GPIO_SetBits(GPIOA,GPIO_Pin_8);
-
-
 }
 
 void Show(void)
 {
-    visualize_grid();
-    for(uint8_t i = 0; i < 16; i ++)
-    {
-        for(uint8_t j = 0; j < 16; j ++){
-            PRINT("%c",visual_buffer[i][j]);
-        }
-        PRINT("\n");
-        Delay_Ms(10);
+    if(ticks++%2==0){
+        screen_update();
+        OLED_16(screen);
     }
 }
 /*********************************************************************
@@ -95,12 +79,29 @@ int main(void)
     InitGPIO();
 
     SoftI2CInit();
-
     OLED_Init();
     OLED_16(screen);
     OLED_TurnOn();
 
-    PRINT("Turned on.\r\n");
+    SysTick->CTLR = 0;
+    SysTick->CNT = 0;
+    SysTick->CTLR = 1;
+    uint32_t time = SysTick->CNT;
+    for (int i=0;i<20;i++){
+        int acce = (GPIO_ReadInputDataBit(GPIOA,GPIO_Pin_10) == Bit_SET) ? 3 : -3 ;
+        ParticleIntegrate(_IQ(acce), _IQ(9.8f));
+        PushParticlesApart(PUSH_ITER);
+        particles_to_grid();
+        density_update();
+        compute_grid_forces(GRID_ITER);
+        grid_to_particles();
+        Show();
+    }
+
+    time = SysTick->CNT - time;
+    uint32_t fps = ( (20*SystemCoreClock) >> 3 )/time;
+    PRINT("fps: %d \r\n",fps);
+
 
     while(1)
     {   
@@ -113,8 +114,7 @@ int main(void)
             density_update();
             compute_grid_forces(GRID_ITER);
             grid_to_particles();
-            screen_update();
-            OLED_16(screen);
+            Show();
 
         }
 
@@ -126,8 +126,7 @@ int main(void)
             density_update();
             compute_grid_forces(GRID_ITER);
             grid_to_particles();
-            screen_update();
-            OLED_16(screen);
+            Show();
         }
 
         for (int i=0;i<70;i++){
@@ -138,8 +137,7 @@ int main(void)
             density_update();
             compute_grid_forces(GRID_ITER);
             grid_to_particles();
-            screen_update();
-            OLED_16(screen);
+            Show();
         }
 
         int acce = 0;
@@ -151,8 +149,7 @@ int main(void)
             density_update();
             compute_grid_forces(GRID_ITER);
             grid_to_particles();
-            screen_update();
-            OLED_16(screen);
+            Show();
         }
 
     }

@@ -1,20 +1,12 @@
 #ifndef __AHT20_H_
 #define __AHT20_H_
 
-#define SDA_PIN GPIO_Pin_3
-#define SCL_PIN GPIO_Pin_1
-
 #include "debug.h"
 
 
 
 #define ACK 1
 #define NACK 0
-#define SDA_LOW  SDA_OUTLOW()
-#define SDA_HIGH SDA_IPU()
-#define SCL_LOW  GPIO_ResetBits(GPIOA,SCL_PIN) 
-#define SCL_HIGH GPIO_SetBits(GPIOA,SCL_PIN)
-#define READ_SDA() (GPIO_ReadInputDataBit(GPIOA,SDA_PIN))
 
 #define I2CDelayUs(x) 
 

@@ -35,28 +35,6 @@ void SoftI2CInit()
 
 }
 
-void SDA_IPU(void)
-{
-    GPIO_InitTypeDef  GPIO_InitStructure;
-    RCC_APB2PeriphClockCmd(RCC_APB2Periph_USART1 | RCC_APB2Periph_GPIOA, ENABLE);
-    GPIO_InitStructure.GPIO_Pin = SDA_PIN;
-    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
-    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IPU;
-    GPIO_Init(GPIOA, &GPIO_InitStructure);
-}
-
-void SDA_OUTLOW(void)
-{
-    GPIO_InitTypeDef  GPIO_InitStructure;
-    GPIO_ResetBits(GPIOA,SDA_PIN);
-    RCC_APB2PeriphClockCmd(RCC_APB2Periph_USART1 | RCC_APB2Periph_GPIOA, ENABLE);
-    GPIO_InitStructure.GPIO_Pin = SDA_PIN;
-    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
-    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_Out_OD;
-    GPIO_Init(GPIOA, &GPIO_InitStructure);
-}
-
-
 void I2CStart()
 {
 	I2C_GenerateSTART( I2C1, ENABLE );

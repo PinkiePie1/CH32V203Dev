@@ -18,11 +18,16 @@ static _iq vPrev[CellCount];
 static _iq uWeight[CellCount];
 static _iq vWeight[CellCount];
 
-static _iq pressure[CellCount];
+//static _iq pressure[CellCount];
 static _iq particleDensity[CellCount];
 static _iq solidMask[CellCount];
-static unsigned int cellType[CellCount];
+static uint8_t cellType[CellCount];
 static _iq particleRestDensity = 0;
+
+static _iq minX = Spacing + ParticleRadius;
+static _iq minY = Spacing + ParticleRadius;
+static _iq maxX;
+static _iq maxY;
 
 #define CellPrefixCountSize (CellCount + 1U)
 
@@ -58,7 +63,7 @@ static int iq_floor_to_int(_iq value) {
 static void setup_solid_mask(void) {
     for (unsigned int x = 0; x < CellNumX; x++) {
         for (unsigned int y = 0; y < CellNumY; y++) {
-            _iq s = _IQ(1.0);
+            _iq s = _IQ(1);
             if (x == 0U || x == CellNumX - 1U || y == 0U || y == CellNumY - 1U) {
                 s = _IQ(0.0);
             }
@@ -73,7 +78,7 @@ void InitParticles() {
     memset(vVel, 0, sizeof(vVel));
     memset(uPrev, 0, sizeof(uPrev));
     memset(vPrev, 0, sizeof(vPrev));
-    memset(pressure, 0, sizeof(pressure));
+    //memset(pressure, 0, sizeof(pressure));
     memset(particleDensity, 0, sizeof(particleDensity));
     particleRestDensity = _IQ(0.0);
     setup_solid_mask();
@@ -85,6 +90,8 @@ void InitParticles() {
     const _iq dx = _IQmpy(_IQ(2.0), r);
     const _iq dy = _IQmpy(_IQ(0.86602540378), dx);
     invertSpacing = _IQdiv(_IQ(1.0), Spacing);
+    maxX = _IQmpy(_IQ(CellNumX - 1U), Spacing) - ParticleRadius;
+    maxY = _IQmpy(_IQ(CellNumY - 1U), Spacing) - ParticleRadius;
 
     unsigned int p_num = 0;
     for (unsigned int i = 0; i < CellNumX && p_num < NumberOfParticles; i++) {
@@ -107,10 +114,7 @@ void InitParticles() {
 }
 
 void ParticleIntegrate(_iq xAcceleration, _iq yAcceleration) {
-    const _iq minX = Spacing + ParticleRadius;
-    const _iq maxX = _IQmpy(_IQ(CellNumX - 1U), Spacing) - ParticleRadius;
-    const _iq minY = Spacing + ParticleRadius;
-    const _iq maxY = _IQmpy(_IQ(CellNumY - 1U), Spacing) - ParticleRadius;
+
 
     for (unsigned int i = 0; i < NumberOfParticles; i++) {
         particleVel[XID(i)] += _IQmpy(xAcceleration, dt);
@@ -123,19 +127,19 @@ void ParticleIntegrate(_iq xAcceleration, _iq yAcceleration) {
 
         if (x < minX) {
             x = minX;
-            particleVel[XID(i)] = _IQ(0.0);
+            particleVel[XID(i)] = _IQmpy(particleVel[XID(i)], BOUNCYNESS);
         }
         if (x > maxX) {
             x = maxX;
-            particleVel[XID(i)] = _IQ(0.0);
+            particleVel[XID(i)] = _IQmpy(particleVel[XID(i)], BOUNCYNESS);
         }
         if (y < minY) {
             y = minY;
-            particleVel[YID(i)] = _IQ(0.0);
+            particleVel[YID(i)] = _IQmpy(particleVel[YID(i)] ,BOUNCYNESS);
         }
         if (y > maxY) {
             y = maxY;
-            particleVel[YID(i)] = _IQ(0.0);
+            particleVel[YID(i)] = _IQmpy(particleVel[YID(i)] ,BOUNCYNESS);
         }
 
         particlePos[XID(i)] = x;
@@ -216,6 +220,30 @@ void PushParticlesApart(unsigned int nIters) {
             }
         }
     }
+    for (unsigned int i = 0; i < NumberOfParticles; i++) {
+        _iq x = particlePos[XID(i)];
+        _iq y = particlePos[YID(i)];
+
+        if (x < minX) {
+            x = minX;
+            particleVel[XID(i)] = _IQmpy(particleVel[XID(i)], BOUNCYNESS);
+        }
+        if (x > maxX) {
+            x = maxX;
+            particleVel[XID(i)] = _IQmpy(particleVel[XID(i)], BOUNCYNESS);
+        }
+        if (y < minY) {
+            y = minY;
+            particleVel[YID(i)] = _IQmpy(particleVel[YID(i)] ,BOUNCYNESS);
+        }
+        if (y > maxY) {
+            y = maxY;
+            particleVel[YID(i)] = _IQmpy(particleVel[YID(i)] ,BOUNCYNESS);
+        }
+
+        particlePos[XID(i)] = x;
+        particlePos[YID(i)] = y;
+    }
 }
 
 void density_update(void) {
@@ -279,9 +307,8 @@ void particles_to_grid(void) {
         int xi = clamp_index(iq_floor_to_int(_IQmpy(particlePos[XID(i)], invertSpacing)), 0, (int)CellNumX - 1);
         int yi = clamp_index(iq_floor_to_int(_IQmpy(particlePos[YID(i)], invertSpacing)), 0, (int)CellNumY - 1);
         unsigned int cellNr = INDEX((unsigned int)xi, (unsigned int)yi);
-        if (cellType[cellNr] == AIR_CELL) {
-            cellType[cellNr] = FLUID_CELL;
-        }
+        cellType[cellNr] = FLUID_CELL;
+        
     }
 
     const _iq h = Spacing;
@@ -354,11 +381,11 @@ void particles_to_grid(void) {
 }
 
 void compute_grid_forces(unsigned int nIters) {
-    memset(pressure, 0, sizeof(pressure));
+    //memset(pressure, 0, sizeof(pressure));
     memcpy(uPrev, uVel, sizeof(uVel));
     memcpy(vPrev, vVel, sizeof(vVel));
 
-    const _iq cp = _IQdiv(_IQmpy(_IQ(1000.0), Spacing), dt);
+    //const _iq cp = _IQdiv(_IQmpy(_IQ(1000.0), Spacing), dt);
 
     for (unsigned int iter = 0; iter < nIters; iter++) {
         for (unsigned int x = 1; x < CellNumX - 1U; x++) {
@@ -394,7 +421,7 @@ void compute_grid_forces(unsigned int nIters) {
 
                 _iq p = -_IQdiv(div, s);
                 p = _IQmpy(p, overRelaxiation);
-                pressure[center] += _IQmpy(cp, p);
+                //pressure[center] += _IQmpy(cp, p);
 
                 uVel[center] -= _IQmpy(sx0, p);
                 uVel[right] += _IQmpy(sx1, p);
@@ -466,10 +493,11 @@ void screen_update() {
     //显示
     
     // 根据网格类型直接显示
-    for (int y = 0; y < CellNumY; y++) {
-        for (int x = 0; x < CellNumX; x++) {
-
-            unsigned int cell = cellType[INDEX(x, y)];
+    for (int y = 1; y < CellNumY-1; y++) {
+        for (int x = 1; x < CellNumX-1; x++) {
+            uint32_t cell = cellType[INDEX(x, y)];
+            x--;
+            y--;
             uint16_t index = (x%16)+((y>>3)<<4);
             screen[index] &= ~(1 << (y&7UL));
             //screen[index] |= (1 << (y&7UL));
@@ -478,6 +506,8 @@ void screen_update() {
             } else if (cell == SOLID_CELL) {
                 screen[index] |= (1 << (y&7UL));
             }
+            x++;
+            y++;
             
         }
     }    
