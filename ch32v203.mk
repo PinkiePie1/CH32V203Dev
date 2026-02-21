@@ -160,11 +160,11 @@ flash: $(BUILD_DIR)/$(TARGET).bin
 	@echo "Flashing the device..."
 ifdef NEEDS_UNBRICK
 	@echo "unbricking.."
-	@$(SELF_DIR)minichlink -u
+	$(SELF_DIR)minichlink -u
 	@sleep 0.1
 endif
 	@echo "Uploading firmware..."
-	@$(SELF_DIR)minichlink -w $(BUILD_DIR)/$(TARGET).bin flash -b
+	$(SELF_DIR)minichlink -w $(BUILD_DIR)/$(TARGET).bin flash -b
 	@echo "Flash complete."
 
 

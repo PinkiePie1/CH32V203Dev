@@ -4,6 +4,33 @@ uint8_t err=0;
 //初始化输入
 void SoftI2CInit()
 {
+	GPIO_InitTypeDef GPIO_InitStructure={0};
+	I2C_InitTypeDef I2C_InitTSturcture={0};
+
+	RCC_APB2PeriphClockCmd( RCC_APB2Periph_GPIOB | RCC_APB2Periph_AFIO, ENABLE );
+	GPIO_PinRemapConfig(GPIO_Remap_I2C1, ENABLE);
+	RCC_APB1PeriphClockCmd( RCC_APB1Periph_I2C1, ENABLE );
+
+	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_8;
+	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF_OD;
+	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+	GPIO_Init( GPIOB, &GPIO_InitStructure );
+
+	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_9;
+	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF_OD;
+	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+	GPIO_Init( GPIOB, &GPIO_InitStructure );
+
+	I2C_InitTSturcture.I2C_ClockSpeed = 400000;
+	I2C_InitTSturcture.I2C_Mode = I2C_Mode_I2C;
+	I2C_InitTSturcture.I2C_DutyCycle = I2C_DutyCycle_16_9;
+	I2C_InitTSturcture.I2C_OwnAddress1 = 0;
+	I2C_InitTSturcture.I2C_Ack = I2C_Ack_Enable;
+	I2C_InitTSturcture.I2C_AcknowledgedAddress = I2C_AcknowledgedAddress_7bit;
+    I2C_Init( I2C1, &I2C_InitTSturcture );
+
+	I2C_Cmd( I2C1, ENABLE );
+
 	return;
 
 }
@@ -32,104 +59,51 @@ void SDA_OUTLOW(void)
 
 void I2CStart()
 {
-	SCL_HIGH;
-	I2CDelayUs(1);
-	SDA_HIGH;
-	I2CDelayUs(1);
-	SDA_LOW;
-	I2CDelayUs(1);
-	SCL_LOW;
-	
+	I2C_GenerateSTART( I2C1, ENABLE );
 }
 
 void I2CStop()
 {
-	SDA_LOW;
-	I2CDelayUs(1);
-	SCL_HIGH;
-	I2CDelayUs(1);
-	SDA_HIGH;
-	
+    I2C_GenerateSTOP( I2C1, ENABLE );
 }
 
 
 uint8_t I2C_Write(uint8_t dat)
-{
-	uint8_t data = dat;
-	for (uint8_t i = 0; i<8;i++)
-	{
-		
-		if(data&0x80){SDA_HIGH;}
-		else{SDA_LOW;}
-		SCL_HIGH;
-		I2CDelayUs(1);
-		SCL_LOW;
-		data = (data << 1);
-	}
-	SDA_HIGH;//输入读取
-	I2CDelayUs(1);
-	SCL_HIGH;
-	I2CDelayUs(1);
-	if(READ_SDA()==0)
-	{
-		SCL_LOW;
-		return ACK;
-	} 
-	else 
-	{	
-		SCL_LOW;
-		return NACK;
-	}
-	
+{	
+	I2C_SendData(I2C1,dat);
 }
 
 uint8_t I2C_Read(uint8_t ack)
 {
-	uint8_t data = 0;
-	SDA_HIGH;
-	for (uint8_t i = 0; i < 8 ; i++ )
-	{
-		data = (data << 1);
-		SCL_HIGH;
-		if(READ_SDA() == 0){;}
-		else{data |= 0x01;}
-		SCL_LOW;
-		I2CDelayUs(1);
-		
-	}
-
-	if(ack)
-	{
-		SDA_LOW;//ACK
-	} 
-	else 
-	{
-		SDA_HIGH;//NACK
-	}
-	SCL_HIGH;
-	I2CDelayUs(1);
-	SCL_LOW;
-	SDA_HIGH;
-	return data;
-
+	I2C_ReceiveData(I2C1);
 }
 
 //issue a command to the OLED
 void OLED_CMD(uint8_t cmd)
 {
 	I2CStart();
+	while( !I2C_CheckEvent( I2C1, I2C_EVENT_MASTER_MODE_SELECT ) );
 	I2C_Write(0x78);//SSD1315 address
+	while( I2C_GetFlagStatus( I2C1, I2C_FLAG_TXE ) ==  RESET );
+	I2C_CheckEvent( I2C1, I2C_EVENT_MASTER_TRANSMITTER_MODE_SELECTED );
 	I2C_Write(0x80);//control bit, indicating the next data is a command.
+	while( I2C_GetFlagStatus( I2C1, I2C_FLAG_TXE ) ==  RESET );
 	I2C_Write(cmd);
+	while( !I2C_CheckEvent( I2C1, I2C_EVENT_MASTER_BYTE_TRANSMITTED ) );
 	I2CStop();
 }
 
 void OLED_DAT(uint8_t dat)
 {
 	I2CStart();
+	while( !I2C_CheckEvent( I2C1, I2C_EVENT_MASTER_MODE_SELECT ) );
 	I2C_Write(0x78);//SSD1315 address
+	while( I2C_GetFlagStatus( I2C1, I2C_FLAG_TXE ) ==  RESET );
+	I2C_CheckEvent( I2C1, I2C_EVENT_MASTER_TRANSMITTER_MODE_SELECTED );
 	I2C_Write(0xC0);//control bit, indicating the next data is a data
+	while( I2C_GetFlagStatus( I2C1, I2C_FLAG_TXE ) ==  RESET );
 	I2C_Write(dat);
+	while( !I2C_CheckEvent( I2C1, I2C_EVENT_MASTER_BYTE_TRANSMITTED ) );
 	I2CStop();
 }
 
@@ -142,20 +116,14 @@ void OLED_Clean(void)
 		OLED_CMD(0x00); //set start position to be 0
 		OLED_CMD(0x10); //set start position to be 0
 		//burst write
-		I2CStart();
-		I2C_Write(0x78);//SSD1315 address
-		I2C_Write(0x40);//control bit, indicating the next ton of data is going into ram.
 		for(uint16_t j = 0; j < 128; j++){
-			I2C_Write(0x00);
+			OLED_DAT(0x00);
 		}
-		I2CStop();
-
 	}	
 }
 
 void OLED_Init(void)
 {
-	SoftI2CInit();
 	OLED_CMD( 0xAE );
 	OLED_CMD( 0x00 );
 	OLED_CMD( 0x10 );
@@ -211,14 +179,19 @@ void OLED_GDDRAM(uint8_t * data)
 		OLED_CMD(0xB0+i);//set page to ith page
 		OLED_CMD(0x00); //set start position to be 0
 		OLED_CMD(0x10); //set start position to be 0
-		//burst write
+		//burst write	
 		I2CStart();
+		while( !I2C_CheckEvent( I2C1, I2C_EVENT_MASTER_MODE_SELECT ) );
 		I2C_Write(0x78);//SSD1315 address
+		while( !I2C_CheckEvent( I2C1, I2C_EVENT_MASTER_BYTE_TRANSMITTED ) );
 		I2C_Write(0x40);//control bit, indicating the next ton of data is going into ram.
+		while( !I2C_CheckEvent( I2C1, I2C_EVENT_MASTER_BYTE_TRANSMITTED ) );
 		for(uint16_t j = 0; j < 128; j++){
+			while( !I2C_CheckEvent( I2C1, I2C_EVENT_MASTER_BYTE_TRANSMITTED ) );
 			I2C_Write(data[i*128+j]);
 
 		}
+		while( !I2C_CheckEvent( I2C1, I2C_EVENT_MASTER_BYTE_TRANSMITTED ) );
 		I2CStop();
 
 	}	
@@ -233,13 +206,28 @@ void OLED_16(uint8_t * data)
 		OLED_CMD(0x0F); //set start position to be 0
 		OLED_CMD(0x12); //set start position to be 0
 		//burst write
-		I2CStart();
-		I2C_Write(0x78);//SSD1315 address
-		I2C_Write(0x40);//control bit, indicating the next ton of data is going into ram.
+		/*
 		for(uint16_t j = 0; j < 16; j++){
+			OLED_DAT(data[i*16+j]);
+		}
+		*/
+		I2CStart();
+		while( !I2C_CheckEvent( I2C1, I2C_EVENT_MASTER_MODE_SELECT ) );
+
+		I2C_Write(0x78);//SSD1315 address
+		while( !I2C_CheckEvent( I2C1, I2C_EVENT_MASTER_TRANSMITTER_MODE_SELECTED ) );
+
+		I2C_Write(0x40);//control bit, indicating the next ton of data is going into ram.
+		while( !I2C_CheckEvent( I2C1, I2C_EVENT_MASTER_BYTE_TRANSMITTED ) );
+		I2C_CheckEvent( I2C1, I2C_EVENT_MASTER_TRANSMITTER_MODE_SELECTED );
+
+		for(uint16_t j = 0; j < 16; j++){
+			while( I2C_GetFlagStatus( I2C1, I2C_FLAG_TXE ) ==  RESET );			
 			I2C_Write(data[i*16+j]);
 
+		
 		}
+		while( !I2C_CheckEvent( I2C1, I2C_EVENT_MASTER_BYTE_TRANSMITTED ) );
 		I2CStop();
 
 	}	

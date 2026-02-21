@@ -94,9 +94,13 @@ int main(void)
 
     InitGPIO();
 
+    SoftI2CInit();
+
     OLED_Init();
     OLED_16(screen);
     OLED_TurnOn();
+
+    PRINT("Turned on.\r\n");
 
     while(1)
     {   
