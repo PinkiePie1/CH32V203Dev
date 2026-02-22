@@ -14,7 +14,7 @@
 #define BOUNCYNESS _IQ(-0.9f) //墙壁的弹性。
 
 #define overRelaxiation _IQ(1.9f) 
-#define stiffnessCoefficient _IQ(0.5f)
+#define stiffnessCoefficient _IQ(1.0f)
 
 //用于访问粒子位置的一些方便的宏
 #define XID(n) 2*(n)    //访问x位置
