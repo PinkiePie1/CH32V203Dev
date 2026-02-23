@@ -6,27 +6,12 @@
  * Description        : Main program body.
  *********************************************************************************
  * Copyright (c) 2021 Nanjing Qinheng Microelectronics Co., Ltd.
- * Attention: This software (modified or not) and binary are used for 
+ * Attention: This software (modified or not) and binary are used for
  * microcontroller manufactured by Nanjing Qinheng Microelectronics.
  *******************************************************************************/
 
-/*
- *@Note
- *USART Print debugging routine:
- *USART1_Tx(PA9).
- *This example demonstrates using USART1(PA9) as a print debug port output.
- *
- */
-
 #include "debug.h"
-
-
-/* Global typedef */
-
-/* Global define */
-
-/* Global Variable */
-
+#include "charlie.h"
 
 int main(void)
 {
@@ -36,13 +21,19 @@ int main(void)
     USART_Printf_Init(115200);
 
     PRINT("SystemClk:%d\r\n", SystemCoreClock);
-    PRINT( "ChipID:%08x\r\n", DBGMCU_GetCHIPID() );
-    PRINT("This is FLIP example\r\n");
+    PRINT("ChipID:%08x\r\n", DBGMCU_GetCHIPID());
+    PRINT("DMA Charlie LED demo\r\n");
 
+    LED_InitPeri();
 
-    while(1)
-    {   
-
+    for(uint8_t i = 0; i < CHARLIE_LED_SIZE; i++)
+    {
+        LED_SetPixel(i, (uint8_t)((i + 1U) % CHARLIE_LED_SIZE), 1);
     }
 
+    LED_Show();
+
+    while(1)
+    {
+    }
 }
