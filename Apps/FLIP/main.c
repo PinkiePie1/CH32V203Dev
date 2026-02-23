@@ -51,8 +51,9 @@ void GetAcce(uint32_t i, _iq * accex, _iq * accey)
     } 
     else if (i < 600)
     {
-        *accex = _IQ(0);
-        *accey = _IQ(-9.8f);
+        _iq t = _IQmpy(_IQ(0.02f),_IQ((i-590)));
+        *accex = _IQmpy(_IQ(10.0f),_IQsin(t));
+        *accey = _IQmpy(_IQ(10.0f),_IQcos(t));
     }
     else if (i < 900)
     {
@@ -136,7 +137,7 @@ int main(void)
     {   
         _iq accex = _IQ(0);
         _iq accey = _IQ(9.8f);
-        for (int i=0;i<1200;i++){
+        for (int i=0;i<1400;i++){
 
             GetAcce(i,&accex,&accey);
             ParticleIntegrate(accex, accey);
