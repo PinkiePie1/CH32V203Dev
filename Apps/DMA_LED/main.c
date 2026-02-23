@@ -31,6 +31,10 @@
 uint8_t ticks=0;
 /* Global Variable */
 
+
+_iq accx = 0;
+_iq accy = 0;
+
 void InitGPIO(void)
 {
     GPIO_InitTypeDef  GPIO_InitStructure;
@@ -42,41 +46,42 @@ void InitGPIO(void)
 
 }
 
-void GetAcce(uint32_t i, _iq * accex, _iq * accey)
-{
-    if (i<300)
-    {
-        *accex = _IQ(0);
-        *accey = _IQ(9.8f);
-    } 
-    else if (i < 600)
-    {
-        *accex = _IQ(0);
-        *accey = _IQ(-9.8f);
-    }
-    else if (i < 900)
-    {
-        *accex = _IQ(9.8f);
-        *accey = _IQ(0);
-    }
-    else if (i < 1200)
-    {
-        *accex = _IQ(-9.8f);
-        *accey = _IQ(0);
-    }
-    else
-    {
-        return;
-    }
-}
-
-
 void Show(void)
 {
-    if(ticks++%2==0){
+    if(ticks++%1==0){
         screen_update();
         OLED_16(screen);
     }
+}
+
+void GetAcce(uint32_t i)
+{
+    if (i<20){
+        accx = ((GPIOA->INDR & GPIO_Pin_10) != (uint32_t)Bit_RESET) ? _IQ(3) : _IQ(-3) ;
+        accy = _IQ(9.8f);
+    } else if (i>=20 && i < 40){
+        accx = _IQ(16U);
+        accy = _IQ(9.8f);
+    } else if (i>=40 && i < 110){
+        accx = _IQ(-0.5f);
+        accy = _IQ(9.0f);
+    } else if (i>=110 && i < 130){
+        accx = _IQ(-16);
+        accy = _IQ(9.8f);       
+    } else if (i>=130 && i < 830) {
+        accx = _IQ(0);
+        accy = _IQ(9.8f);
+    } else if (i>=830 && i<1200) {
+        _iq t = _IQmpy(_IQ(0.02f),_IQ((i-830)));
+        accx = _IQmpy(_IQ(10.0f),_IQsin(t));
+        accy = _IQmpy(_IQ(10.0f),_IQcos(t));
+    } else if (i>=1200 && i<1600) {
+        accx = (GPIO_ReadInputDataBit(GPIOA,GPIO_Pin_10) == Bit_SET) ? _IQ(3) : _IQ(-3) ;
+        accy = _IQ(5.8f);
+    } else {
+        return;
+    }
+
 }
 /*********************************************************************
  * @fn      main
@@ -116,9 +121,9 @@ int main(void)
     SysTick->CNT = 0;
     SysTick->CTLR = 1;
     uint32_t time = SysTick->CNT;
-    for (int i=0;i<20;i++){
-        int acce = (GPIO_ReadInputDataBit(GPIOA,GPIO_Pin_10) == Bit_SET) ? 3 : -3 ;
-        ParticleIntegrate(_IQ(acce), _IQ(9.8f));
+    for (int i=0;i<10;i++){
+        GetAcce(i);
+        ParticleIntegrate(accx,accy);
         PushParticlesApart(PUSH_ITER);
         particles_to_grid();
         density_update();
@@ -128,18 +133,16 @@ int main(void)
     }
 
     time = SysTick->CNT - time;
-    uint32_t fps = ( (20*SystemCoreClock) >> 3 )/time;
+    uint32_t fps = ( (10*SystemCoreClock) >> 3 )/time;
     PRINT("fps: %d \r\n",fps);
 
 
     while(1)
     {   
-        _iq accex = _IQ(0);
-        _iq accey = _IQ(9.8f);
-        for (int i=0;i<1200;i++){
 
-            GetAcce(i,&accex,&accey);
-            ParticleIntegrate(accex, accey);
+        for (int i=0;i<1600;i++){
+            GetAcce(i);
+            ParticleIntegrate(accx,accy);
             PushParticlesApart(PUSH_ITER);
             particles_to_grid();
             density_update();
@@ -150,4 +153,5 @@ int main(void)
         }
 
     }
+
 }

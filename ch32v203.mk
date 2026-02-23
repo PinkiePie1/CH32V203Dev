@@ -7,14 +7,15 @@ $(info build dir at : $(BUILD_DIR))
 # Source
 ######################################
 # C sources
-C_SOURCES +=	\
-$(wildcard $(SELF_DIR)SRC/Core/*.c) \
-$(wildcard $(SELF_DIR)SRC/Debug/*.c) \
-$(wildcard $(SELF_DIR)SRC/Peripheral/src/*.c) 
 
 # c sources here
 C_SOURCES += \
 $(wildcard ./*.c) 
+
+C_SOURCES +=	\
+$(wildcard $(SELF_DIR)SRC/Core/*.c) \
+$(wildcard $(SELF_DIR)SRC/Debug/*.c) \
+$(wildcard $(SELF_DIR)SRC/Peripheral/src/*.c) 
 
 # ASM sources
 ASM_SOURCES = $(SELF_DIR)SRC/Startup/startup_ch32v20x_D6.S
@@ -37,8 +38,7 @@ C_INCLUDES += \
 AS_INCLUDES = -I"$(SELF_DIR)SRC/Startup" 
 
 # optimization
-OPT = -Os
-
+OPT = -O3
 ######################################
 # Defines
 ######################################
@@ -103,7 +103,7 @@ LIBDIR =
 LDFLAGS = $(ARCH)  $(LIBDIR) $(PERIFLIB_SOURCES)
 
 LDFLAGS += -msmall-data-limit=8 -msave-restore -fmax-errors=20\
--Os -fmessage-length=0 -fsigned-char -ffunction-sections -fdata-sections\
+$(OPT) -fmessage-length=0 -fsigned-char -ffunction-sections -fdata-sections\
 -fno-common -Wunused -Wuninitialized -g\
 -T $(LDSCRIPT)\
 -nostartfiles -Xlinker --gc-sections\
@@ -138,7 +138,7 @@ $(BUILD_DIR)/%.o: %.S Makefile | $(BUILD_DIR)
 
 $(BUILD_DIR)/$(TARGET).elf: $(OBJECTS) Makefile
 	@echo "LD $@"
-	@$(CC) $(LDFLAGS) -o $@ $(OBJECTS) $(LIBS)
+	$(CC) $(LDFLAGS) -o $@ $(OBJECTS) $(LIBS)
 	@echo "OD $@"
 	@$(OD) --all-headers --demangle --disassemble -M xw $(BUILD_DIR)/$(TARGET).elf > $(BUILD_DIR)/$(TARGET).lst 
 	@echo "SZ $@"

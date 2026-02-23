@@ -30,8 +30,8 @@ static _iq maxY;
 
 #define CellPrefixCountSize (CellCount + 1U)
 
-static unsigned int cellParticleCountPrefix[CellPrefixCountSize];
-static unsigned int particlePosId[NumberOfParticles];
+static uint8_t cellParticleCountPrefix[CellPrefixCountSize];
+static uint8_t particlePosId[NumberOfParticles];
 
 void printLocation(unsigned int n);
 
