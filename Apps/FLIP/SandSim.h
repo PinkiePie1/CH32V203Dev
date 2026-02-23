@@ -8,7 +8,7 @@
 #define ParticleRadius _IQ(0.018f) //粒子半径
 #define Spacing _IQ(0.05f)//网格间距
 #define CellNumX 18U //x轴方向的网格数量
-#define CellNumY 18U //y轴方向的网格数量
+#define CellNumY 17U //y轴方向的网格数量
 #define CellCount CellNumX*CellNumY //网格总数
 #define dt _IQ(0.01f) //时间步长
 #define BOUNCYNESS _IQ(-0.9f) //墙壁的弹性。
