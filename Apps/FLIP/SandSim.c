@@ -55,10 +55,6 @@ static _iq clampf_local(_iq value, _iq min_value, _iq max_value) {
     return value;
 }
 
-static int iq_floor_to_int(_iq value) {
-    return (int)(value >> GLOBAL_Q);
-}
-
 static void setup_solid_mask(void) {
     for (unsigned int x = 0; x < CellNumX; x++) {
         for (unsigned int y = 0; y < CellNumY; y++) {
@@ -151,8 +147,8 @@ void PushParticlesApart(unsigned int nIters) {
     memset(particlePosId, 0, sizeof(particlePosId));
 
     for (unsigned int i = 0; i < NumberOfParticles; i++) {
-        unsigned int xi = (unsigned int)clamp_index(iq_floor_to_int(_IQmpy(particlePos[XID(i)], invertSpacing)), 0, (int)CellNumX - 1);
-        unsigned int yi = (unsigned int)clamp_index(iq_floor_to_int(_IQmpy(particlePos[YID(i)], invertSpacing)), 0, (int)CellNumY - 1);
+        unsigned int xi = (unsigned int)clamp_index(_IQint(_IQmpy(particlePos[XID(i)], invertSpacing)), 0, (int)CellNumX - 1);
+        unsigned int yi = (unsigned int)clamp_index(_IQint(_IQmpy(particlePos[YID(i)], invertSpacing)), 0, (int)CellNumY - 1);
         cellParticleCountPrefix[INDEX(xi, yi)]++;
     }
 
@@ -164,8 +160,8 @@ void PushParticlesApart(unsigned int nIters) {
     cellParticleCountPrefix[CellCount] = prefix;
 
     for (unsigned int i = 0; i < NumberOfParticles; i++) {
-        unsigned int xi = (unsigned int)clamp_index(iq_floor_to_int(_IQmpy(particlePos[XID(i)], invertSpacing)), 0, (int)CellNumX - 1);
-        unsigned int yi = (unsigned int)clamp_index(iq_floor_to_int(_IQmpy(particlePos[YID(i)], invertSpacing)), 0, (int)CellNumY - 1);
+        unsigned int xi = (unsigned int)clamp_index(_IQint(_IQmpy(particlePos[XID(i)], invertSpacing)), 0, (int)CellNumX - 1);
+        unsigned int yi = (unsigned int)clamp_index(_IQint(_IQmpy(particlePos[YID(i)], invertSpacing)), 0, (int)CellNumY - 1);
         unsigned int cellNr = INDEX(xi, yi);
         unsigned int gridIndex = --cellParticleCountPrefix[cellNr];
         particlePosId[gridIndex] = i;
@@ -179,8 +175,8 @@ void PushParticlesApart(unsigned int nIters) {
             _iq px = particlePos[XID(i)];
             _iq py = particlePos[YID(i)];
 
-            int pxi = clamp_index(iq_floor_to_int(_IQmpy(px, invertSpacing)), 0, (int)CellNumX - 1);
-            int pyi = clamp_index(iq_floor_to_int(_IQmpy(py, invertSpacing)), 0, (int)CellNumY - 1);
+            int pxi = clamp_index(_IQint(_IQmpy(px, invertSpacing)), 0, (int)CellNumX - 1);
+            int pyi = clamp_index(_IQint(_IQmpy(py, invertSpacing)), 0, (int)CellNumY - 1);
             int x0 = (pxi > 0) ? pxi - 1 : 0;
             int y0 = (pyi > 0) ? pyi - 1 : 0;
             int x1 = (pxi + 1 < (int)CellNumX) ? pxi + 1 : (int)CellNumX - 1;
@@ -256,8 +252,8 @@ void density_update(void) {
         _iq x = clampf_local(particlePos[XID(i)], h, _IQmpy(_IQ(CellNumX - 1U), h));
         _iq y = clampf_local(particlePos[YID(i)], h, _IQmpy(_IQ(CellNumY - 1U), h));
 
-        int x0 = iq_floor_to_int(_IQmpy((x - h2), h1));
-        int y0 = iq_floor_to_int(_IQmpy((y - h2), h1));
+        int x0 = _IQint(_IQmpy((x - h2), h1));
+        int y0 = _IQint(_IQmpy((y - h2), h1));
         x0 = clamp_index(x0, 0, (int)CellNumX - 2);
         y0 = clamp_index(y0, 0, (int)CellNumY - 2);
         int x1 = x0 + 1;
@@ -303,8 +299,8 @@ void particles_to_grid(void) {
     }
 
     for (unsigned int i = 0; i < NumberOfParticles; i++) {
-        int xi = clamp_index(iq_floor_to_int(_IQmpy(particlePos[XID(i)], invertSpacing)), 0, (int)CellNumX - 1);
-        int yi = clamp_index(iq_floor_to_int(_IQmpy(particlePos[YID(i)], invertSpacing)), 0, (int)CellNumY - 1);
+        int xi = clamp_index(_IQint(_IQmpy(particlePos[XID(i)], invertSpacing)), 0, (int)CellNumX - 1);
+        int yi = clamp_index(_IQint(_IQmpy(particlePos[YID(i)], invertSpacing)), 0, (int)CellNumY - 1);
         unsigned int cellNr = INDEX((unsigned int)xi, (unsigned int)yi);
         cellType[cellNr] = FLUID_CELL;
         
@@ -324,8 +320,8 @@ void particles_to_grid(void) {
             _iq x = clampf_local(particlePos[XID(i)], h, _IQmpy(_IQ(CellNumX - 1U), h));
             _iq y = clampf_local(particlePos[YID(i)], h, _IQmpy(_IQ(CellNumY - 1U), h));
 
-            int x0 = iq_floor_to_int(_IQmpy((x - dx), h1));
-            int y0 = iq_floor_to_int(_IQmpy((y - dy), h1));
+            int x0 = _IQint(_IQmpy((x - dx), h1));
+            int y0 = _IQint(_IQmpy((y - dy), h1));
             x0 = clamp_index(x0, 0, (int)CellNumX - 2);
             y0 = clamp_index(y0, 0, (int)CellNumY - 2);
             int x1 = x0 + 1;
@@ -450,8 +446,8 @@ void grid_to_particles(void) {
             _iq x = clampf_local(particlePos[XID(i)], h, _IQmpy(_IQ(CellNumX - 1U), h));
             _iq y = clampf_local(particlePos[YID(i)], h, _IQmpy(_IQ(CellNumY - 1U), h));
 
-            int x0 = clamp_index(iq_floor_to_int(_IQmpy((x - dx), h1)), 0, (int)CellNumX - 2);
-            int y0 = clamp_index(iq_floor_to_int(_IQmpy((y - dy), h1)), 0, (int)CellNumY - 2);
+            int x0 = clamp_index(_IQint(_IQmpy((x - dx), h1)), 0, (int)CellNumX - 2);
+            int y0 = clamp_index(_IQint(_IQmpy((y - dy), h1)), 0, (int)CellNumY - 2);
             int x1 = x0 + 1;
             int y1 = y0 + 1;
 
@@ -514,6 +510,3 @@ void screen_update() {
     }    
 }
 
-void printLocation(unsigned int n) {
-    return;
-}

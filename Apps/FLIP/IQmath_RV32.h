@@ -32,7 +32,7 @@ extern "C"
 
 /* 设定IQMATH库默认精度(Q精度)，范围： 1 <= GLOBAL_Q <= 30 */
 #ifndef GLOBAL_Q
-#define GLOBAL_Q                24
+#define GLOBAL_Q                23
 #endif
 
 /* 快速除法，运算速度较IQDIV提高2倍，但代码会增加2KB左右 */

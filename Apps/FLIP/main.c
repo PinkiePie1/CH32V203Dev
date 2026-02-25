@@ -28,7 +28,7 @@
 /* Global define */
 
 #define PUSH_ITER 1
-#define GRID_ITER 9
+#define GRID_ITER 13
 uint8_t ticks=0;
 /* Global Variable */
 
@@ -70,8 +70,8 @@ void GetAcce(uint32_t i, _iq * accex, _iq * accey)
     {
         int16_t x,y,z;
         LIS2DH_Get(&x,&y,&z);
-        float xp = (float) x * -1.0f;
-        float yp = (float) y * -1.0f;
+        float xp = (float) x * -0.32f;
+        float yp = (float) y * -0.32f;
 
         *accex = _IQ(xp);
         *accey = _IQ(yp);
