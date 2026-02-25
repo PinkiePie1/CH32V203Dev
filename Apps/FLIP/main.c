@@ -70,8 +70,8 @@ void GetAcce(uint32_t i, _iq * accex, _iq * accey)
     {
         int16_t x,y,z;
         LIS2DH_Get(&x,&y,&z);
-        float xp = (float) x * -0.32f;
-        float yp = (float) y * -0.32f;
+        float xp = (float) x * -1.0f;
+        float yp = (float) y * -1.0f;
 
         *accex = _IQ(xp);
         *accey = _IQ(yp);
@@ -81,7 +81,7 @@ void GetAcce(uint32_t i, _iq * accex, _iq * accey)
 
 void Show(void)
 {
-    if(ticks++%2==0){
+    if(ticks++%1==0){
         screen_update();
         OLED_16(screen);
     }
