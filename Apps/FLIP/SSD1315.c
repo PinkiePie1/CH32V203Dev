@@ -53,7 +53,7 @@ uint8_t I2C_Write(uint8_t dat)
 
 uint8_t I2C_Read(uint8_t ack)
 {
-	I2C_ReceiveData(I2C1);
+	return I2C_ReceiveData(I2C1);
 }
 
 //issue a command to the OLED

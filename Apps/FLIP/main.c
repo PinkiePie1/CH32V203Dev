@@ -21,6 +21,7 @@
 #include "debug.h"
 #include "SandSim.h"
 #include "SSD1315.h"
+#include "LIS2DH.h"
 
 /* Global typedef */
 
@@ -67,7 +68,13 @@ void GetAcce(uint32_t i, _iq * accex, _iq * accey)
     }
     else
     {
-        return;
+        int16_t x,y,z;
+        LIS2DH_Get(&x,&y,&z);
+        float xp = (float) x * -0.32f;
+        float yp = (float) y * -0.32f;
+
+        *accex = _IQ(xp);
+        *accey = _IQ(yp);
     }
 }
 
@@ -109,17 +116,25 @@ int main(void)
     InitGPIO();
 
     SoftI2CInit();
+
+    LIS2DH_Init();
+
+
     OLED_Init();
     OLED_16(screen);
     OLED_TurnOn();
+
+
 
     SysTick->CTLR = 0;
     SysTick->CNT = 0;
     SysTick->CTLR = 1;
     uint32_t time = SysTick->CNT;
-    for (int i=0;i<20;i++){
-        int acce = (GPIO_ReadInputDataBit(GPIOA,GPIO_Pin_10) == Bit_SET) ? 3 : -3 ;
-        ParticleIntegrate(_IQ(acce), _IQ(9.8f));
+    _iq accex = _IQ(0);
+    _iq accey = _IQ(9.8f);
+    for (int i=0;i<5;i++){
+        GetAcce(7000,&accex,&accey);
+        ParticleIntegrate(accex, accey);
         PushParticlesApart(PUSH_ITER);
         particles_to_grid();
         density_update();
@@ -129,17 +144,16 @@ int main(void)
     }
 
     time = SysTick->CNT - time;
-    uint32_t fps = ( (20*SystemCoreClock) >> 3 )/time;
+    uint32_t fps = ( (5*SystemCoreClock) >> 3 )/time;
     PRINT("fps: %d \r\n",fps);
 
 
     while(1)
     {   
-        _iq accex = _IQ(0);
-        _iq accey = _IQ(9.8f);
+
         for (int i=0;i<1400;i++){
 
-            GetAcce(i,&accex,&accey);
+            GetAcce(7000,&accex,&accey);
             ParticleIntegrate(accex, accey);
             PushParticlesApart(PUSH_ITER);
             particles_to_grid();
