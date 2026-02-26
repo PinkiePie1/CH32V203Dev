@@ -40,17 +40,22 @@ int main(void)
     LED_InitPeri();
     uint32_t k = 0;
     uint32_t lednum = 0;
+    u8 color;
     while(1)
     {   
 
         LED_Show();
         
-        if(k>20){
-            k = 0;
-            LED_SetPixel(lednum,LEDOFF);
-            lednum++;
-            LED_SetPixel(lednum,LEDON);
-            lednum = lednum > 71? 0: lednum;
+        if(k>5){
+            k = 0;            
+            LED_SetPixel(lednum,color);
+            lednum+=1;
+            if (lednum > 71)
+            {
+                lednum = 0;
+                color = color == LEDON ? LEDOFF : LEDON;
+            }
+            
         }
         k++;
     }
