@@ -19,13 +19,10 @@
  */
 
 #include "debug.h"
+#include "charlie.h"
 
 
-/* Global typedef */
 
-/* Global define */
-
-/* Global Variable */
 
 
 int main(void)
@@ -37,12 +34,25 @@ int main(void)
 
     PRINT("SystemClk:%d\r\n", SystemCoreClock);
     PRINT( "ChipID:%08x\r\n", DBGMCU_GetCHIPID() );
-    PRINT("This is FLIP example\r\n");
+    PRINT("This is DMA charlie example\r\n");
 
 
+    LED_InitPeri();
+    uint32_t k = 0;
+    uint32_t lednum = 0;
     while(1)
     {   
 
+        LED_Show();
+        
+        if(k>20){
+            k = 0;
+            LED_SetPixel(lednum,LEDOFF);
+            lednum++;
+            LED_SetPixel(lednum,LEDON);
+            lednum = lednum > 71? 0: lednum;
+        }
+        k++;
     }
 
 }
