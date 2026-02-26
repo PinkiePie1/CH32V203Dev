@@ -25,12 +25,6 @@ void LED_InitPeri(void)
     GPIO_Init(GPIOB, &GPIO_InitStructure);
 }
 
-//设置显示内容缓冲区（不需要这个函数，可以直接把缓冲区写在本文件内，然后外部调用setpixel就行了）
-void LED_SetBuffer(uint8_t * buffer[])
-{
-    return;
-}
-
 //点亮或熄灭某个LED
 void LED_SetPixel(uint16_t num, uint8_t color)
 {
