@@ -35,6 +35,12 @@ int main(void)
     LED_InitPeri();
     LED_Show();
 
+    LED_SetPixel(15,LEDON);
+    Delay_Ms(1000);
+    PRINT("RCC is:%x\r\n",RCC->AHBPCENR);
+    PRINT("PWR is:%x\r\n",PWR->CTLR);
+    PWR->CTLR |= 1<<20;
+
     uint32_t lednum = 0;
     u8 color = LEDON;
 
@@ -49,6 +55,6 @@ int main(void)
             color = (color == LEDON) ? LEDOFF : LEDON;
         }
 
-        Delay_Ms(30);
+        Delay_Ms(100);
     }
 }

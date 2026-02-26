@@ -49,7 +49,6 @@ void LED_InitPeri(void)
 {
     GPIO_InitTypeDef gpioInit = {0};
     TIM_TimeBaseInitTypeDef timBaseCfg = {0};
-
     RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOB | RCC_APB2Periph_TIM1, ENABLE);
     RCC_AHBPeriphClockCmd(RCC_AHBPeriph_DMA1, ENABLE);
 
@@ -60,22 +59,28 @@ void LED_InitPeri(void)
 
     LED_RebuildDMABuffer();
 
-    LED_InitDMAChannel(DMA1_Channel5, (uint32_t)&GPIOB->OUTDR, (uint32_t)dmaOutdrOn);
+    LED_InitDMAChannel(DMA1_Channel6, (uint32_t)&GPIOB->OUTDR, (uint32_t)dmaOutdrOn);
     LED_InitDMAChannel(DMA1_Channel2, (uint32_t)&GPIOB->CFGLR, (uint32_t)gpioCFGL);
     LED_InitDMAChannel(DMA1_Channel3, (uint32_t)&GPIOB->CFGHR, (uint32_t)gpioCFGH);
-    LED_InitDMAChannel(DMA1_Channel6, (uint32_t)&GPIOB->OUTDR, (uint32_t)dmaOutdrOff);
+    LED_InitDMAChannel(DMA1_Channel5, (uint32_t)&GPIOB->OUTDR, (uint32_t)dmaOutdrOff);
 
-    timBaseCfg.TIM_Prescaler = (SystemCoreClock / 1000000U) - 1U;
+    timBaseCfg.TIM_Prescaler = (SystemCoreClock / 10000000U) - 1U;
     timBaseCfg.TIM_CounterMode = TIM_CounterMode_Up;
     timBaseCfg.TIM_Period = (onTime + offTime) - 1U;
     timBaseCfg.TIM_ClockDivision = TIM_CKD_DIV1;
     timBaseCfg.TIM_RepetitionCounter = 0;
     TIM_TimeBaseInit(TIM1, &timBaseCfg);
 
-    TIM_SetCompare1(TIM1, 1);
-    TIM_SetCompare2(TIM1, onTime);
+    TIM_SetCompare1(TIM1,offTime);
+    TIM_SetCompare2(TIM1,offTime);
+    TIM_SetCompare3(TIM1,offTime);
 
-    TIM_DMACmd(TIM1, TIM_DMA_Update | TIM_DMA_CC1 | TIM_DMA_CC2, ENABLE);
+
+    TIM_DMACmd(TIM1, TIM_DMA_Update | TIM_DMA_CC1 | TIM_DMA_CC2 | TIM_DMA_CC3, ENABLE);
+    // update-> channel 5
+    // CC1 -> channel 2
+    // CC2 -> channel 3
+    // CC3 -> channel 6
 }
 
 // 点亮或熄灭某个LED
