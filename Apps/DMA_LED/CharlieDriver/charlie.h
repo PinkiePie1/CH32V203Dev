@@ -5,7 +5,7 @@
 
 /* Global typedef */
 #define onTime 10
-#define offTime 520
+#define offTime 190
 /* Global define */
 
 #define LEDON 1

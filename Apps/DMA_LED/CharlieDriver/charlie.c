@@ -1,76 +1,139 @@
 #include "charlie.h"
 
-uint32_t gpioCFGL[16] = 
+static uint32_t gpioCFGL[16] =
 {0X00000003,0X00000030,0X00000300,0X00003000,
  0X00030000,0X00300000,0X03000000,0X30000000,
  0X00000000,0X00000000,0X00000000,0X00000000,
- 0X00000000,0X00000000,0X00000000,0X00000000  
-};
-uint32_t gpioCFGH[16] =
+ 0X00000000,0X00000000,0X00000000,0X00000000};
+
+static uint32_t gpioCFGH[16] =
 {0X00000000,0X00000000,0X00000000,0X00000000,
  0X00000000,0X00000000,0X00000000,0X00000000,
  0X00000003,0X00000030,0X00000300,0X00003000,
- 0X00030000,0X00300000,0X03000000,0X30000000, 
-};
+ 0X00030000,0X00300000,0X03000000,0X30000000};
 
+static uint32_t dmaOutdrOn[PinCount];
+static uint32_t dmaOutdrOff[PinCount];
+static uint8_t  ledRunning = 0;
 
-//初始化DMA，激发DMA的定时器和GPIO外设
-void LED_InitPeri(void)
+static void LED_RebuildDMABuffer(void)
 {
-    GPIO_InitTypeDef GPIO_InitStructure = {0};
-    RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOB, ENABLE);
-    GPIO_InitStructure.GPIO_Pin = GPIO_Pin_All;
-    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IN_FLOATING;
-    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
-    GPIO_Init(GPIOB, &GPIO_InitStructure);
+    for(u8 i = 0; i < PinCount; i++)
+    {
+        dmaOutdrOn[i] = (uint32_t)1U << i;
+        dmaOutdrOff[i] = 0;
+    }
 }
 
-//点亮或熄灭某个LED
+static void LED_InitDMAChannel(DMA_Channel_TypeDef *ch, uint32_t periph, uint32_t mem)
+{
+    DMA_InitTypeDef dmaCfg = {0};
+
+    DMA_DeInit(ch);
+    dmaCfg.DMA_PeripheralBaseAddr = periph;
+    dmaCfg.DMA_MemoryBaseAddr = mem;
+    dmaCfg.DMA_DIR = DMA_DIR_PeripheralDST;
+    dmaCfg.DMA_BufferSize = PinCount;
+    dmaCfg.DMA_PeripheralInc = DMA_PeripheralInc_Disable;
+    dmaCfg.DMA_MemoryInc = DMA_MemoryInc_Enable;
+    dmaCfg.DMA_PeripheralDataSize = DMA_PeripheralDataSize_Word;
+    dmaCfg.DMA_MemoryDataSize = DMA_MemoryDataSize_Word;
+    dmaCfg.DMA_Mode = DMA_Mode_Circular;
+    dmaCfg.DMA_Priority = DMA_Priority_High;
+    dmaCfg.DMA_M2M = DMA_M2M_Disable;
+    DMA_Init(ch, &dmaCfg);
+}
+
+// 初始化DMA、定时器和GPIO外设
+void LED_InitPeri(void)
+{
+    GPIO_InitTypeDef gpioInit = {0};
+    TIM_TimeBaseInitTypeDef timBaseCfg = {0};
+    RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOB | RCC_APB2Periph_TIM1, ENABLE);
+    RCC_AHBPeriphClockCmd(RCC_AHBPeriph_DMA1, ENABLE);
+
+    gpioInit.GPIO_Pin = GPIO_Pin_All;
+    gpioInit.GPIO_Mode = GPIO_Mode_IN_FLOATING;
+    gpioInit.GPIO_Speed = GPIO_Speed_50MHz;
+    GPIO_Init(GPIOB, &gpioInit);
+
+    LED_RebuildDMABuffer();
+
+    LED_InitDMAChannel(DMA1_Channel6, (uint32_t)&GPIOB->OUTDR, (uint32_t)dmaOutdrOn);
+    LED_InitDMAChannel(DMA1_Channel2, (uint32_t)&GPIOB->CFGLR, (uint32_t)gpioCFGL);
+    LED_InitDMAChannel(DMA1_Channel3, (uint32_t)&GPIOB->CFGHR, (uint32_t)gpioCFGH);
+    LED_InitDMAChannel(DMA1_Channel5, (uint32_t)&GPIOB->OUTDR, (uint32_t)dmaOutdrOff);
+
+    timBaseCfg.TIM_Prescaler = (SystemCoreClock / 10000000U) - 1U;
+    timBaseCfg.TIM_CounterMode = TIM_CounterMode_Up;
+    timBaseCfg.TIM_Period = (onTime + offTime) - 1U;
+    timBaseCfg.TIM_ClockDivision = TIM_CKD_DIV1;
+    timBaseCfg.TIM_RepetitionCounter = 0;
+    TIM_TimeBaseInit(TIM1, &timBaseCfg);
+
+    TIM_SetCompare1(TIM1,offTime);
+    TIM_SetCompare2(TIM1,offTime);
+    TIM_SetCompare3(TIM1,offTime);
+
+
+    TIM_DMACmd(TIM1, TIM_DMA_Update | TIM_DMA_CC1 | TIM_DMA_CC2 | TIM_DMA_CC3, ENABLE);
+    // update-> channel 5
+    // CC1 -> channel 2
+    // CC2 -> channel 3
+    // CC3 -> channel 6
+}
+
+// 点亮或熄灭某个LED
 void LED_SetPixel(uint16_t num, uint8_t color)
 {
     u16 x = num % (PinCount - 1);
     u16 y = num / (PinCount - 1);
     x = x >= y ? x + 1 : x;
-    
-    if (color == LEDON){
-        if (x >= 8)
+
+    if(color == LEDON)
+    {
+        if(x >= 8)
         {
-            gpioCFGH[y] |= 0x3 << ((x-8)*4);
+            gpioCFGH[y] |= 0x3 << ((x - 8) * 4);
         }
         else
         {
-            gpioCFGL[y] |= 0x3 << (x*4);
+            gpioCFGL[y] |= 0x3 << (x * 4);
         }
     }
     else
     {
-        if (x >= 8)
+        if(x >= 8)
         {
-            gpioCFGH[y] &= ~(0x3 << ((x-8)*4));
+            gpioCFGH[y] &= ~(0x3 << ((x - 8) * 4));
         }
         else
         {
-            gpioCFGL[y] &= ~(0x3 << (x*4));
+            gpioCFGL[y] &= ~(0x3 << (x * 4));
         }
     }
-
 }
 
-//开启显示，开启timer从而触发DMA驱动GPIO引脚进而驱动查理复用LED点阵
+// 开启显示，启动timer触发DMA自动刷新GPIO寄存器
 void LED_Show(void)
 {
-    for (u8 i = 0; i < 9; i++){
-        GPIOB->OUTDR = 1 << i;
-        GPIOB->CFGHR = gpioCFGH[i];
-        GPIOB->CFGLR = gpioCFGL[i];
-        Delay_Us(onTime);
-        GPIOB->OUTDR = 0 ;
-        Delay_Us(offTime);
+    if(ledRunning)
+    {
+        return;
     }
-}
 
-//关闭显示
-void LED_TurnOff(void)
-{
+    DMA_SetCurrDataCounter(DMA1_Channel5, PinCount);
+    DMA_SetCurrDataCounter(DMA1_Channel2, PinCount);
+    DMA_SetCurrDataCounter(DMA1_Channel3, PinCount);
+    DMA_SetCurrDataCounter(DMA1_Channel6, PinCount);
 
+    DMA_Cmd(DMA1_Channel5, ENABLE);
+    DMA_Cmd(DMA1_Channel2, ENABLE);
+    DMA_Cmd(DMA1_Channel3, ENABLE);
+    DMA_Cmd(DMA1_Channel6, ENABLE);
+
+    TIM_SetCounter(TIM1, 0);
+    TIM_Cmd(TIM1, ENABLE);
+
+    ledRunning = 1;
 }

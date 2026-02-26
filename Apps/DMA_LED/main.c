@@ -6,7 +6,7 @@
  * Description        : Main program body.
  *********************************************************************************
  * Copyright (c) 2021 Nanjing Qinheng Microelectronics Co., Ltd.
- * Attention: This software (modified or not) and binary are used for 
+ * Attention: This software (modified or not) and binary are used for
  * microcontroller manufactured by Nanjing Qinheng Microelectronics.
  *******************************************************************************/
 
@@ -21,10 +21,6 @@
 #include "debug.h"
 #include "charlie.h"
 
-
-
-
-
 int main(void)
 {
     NVIC_PriorityGroupConfig(NVIC_PriorityGroup_1);
@@ -33,31 +29,29 @@ int main(void)
     USART_Printf_Init(115200);
 
     PRINT("SystemClk:%d\r\n", SystemCoreClock);
-    PRINT( "ChipID:%08x\r\n", DBGMCU_GetCHIPID() );
+    PRINT("ChipID:%08x\r\n", DBGMCU_GetCHIPID());
     PRINT("This is DMA charlie example\r\n");
 
-
     LED_InitPeri();
-    uint32_t k = 0;
+    LED_Show();
+
+    LED_SetPixel(15,LEDON);
+
+
     uint32_t lednum = 0;
-    u8 color;
+    u8 color = LEDON;
+
     while(1)
-    {   
+    {
+        LED_SetPixel(lednum, color);
 
-        LED_Show();
-        
-        if(k>5){
-            k = 0;            
-            LED_SetPixel(lednum,color);
-            lednum+=1;
-            if (lednum > 71)
-            {
-                lednum = 0;
-                color = color == LEDON ? LEDOFF : LEDON;
-            }
-            
+        lednum += 1;
+        if(lednum > 71)
+        {
+            lednum = 0;
+            color = (color == LEDON) ? LEDOFF : LEDON;
         }
-        k++;
-    }
 
+        Delay_Ms(100);
+    }
 }
