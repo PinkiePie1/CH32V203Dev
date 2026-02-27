@@ -53,7 +53,7 @@ void LED_InitPeri(void)
     RCC_AHBPeriphClockCmd(RCC_AHBPeriph_DMA1, ENABLE);
 
     gpioInit.GPIO_Pin = GPIO_Pin_All;
-    gpioInit.GPIO_Mode = GPIO_Mode_IN_FLOATING;
+    gpioInit.GPIO_Mode = GPIO_Mode_AIN;
     gpioInit.GPIO_Speed = GPIO_Speed_50MHz;
     GPIO_Init(GPIOB, &gpioInit);
 
@@ -81,6 +81,11 @@ void LED_InitPeri(void)
     // CC1 -> channel 2
     // CC2 -> channel 3
     // CC3 -> channel 6
+
+    //enable support for sleep mode. 
+    TIM_ITConfig(TIM1,TIM_IT_CC1 | TIM_IT_Update,ENABLE);
+	NVIC_EnableIRQ(TIM1_CC_IRQn);
+    NVIC_EnableIRQ(TIM1_UP_IRQn);
 }
 
 // 点亮或熄灭某个LED
@@ -136,4 +141,22 @@ void LED_Show(void)
     TIM_Cmd(TIM1, ENABLE);
 
     ledRunning = 1;
+}
+
+//
+
+
+
+
+void TIM1_CC_IRQHandler(void) __attribute__((interrupt("WCH-Interrupt-fast")));
+void TIM1_UP_IRQHandler(void) __attribute__((interrupt("WCH-Interrupt-fast")));
+
+void TIM1_UP_IRQHandler(void)
+{
+  TIM_ClearITPendingBit(TIM1, TIM_IT_Update);
+}
+
+void TIM1_CC_IRQHandler(void)
+{
+  TIM_ClearITPendingBit(TIM1,TIM_IT_CC1);
 }
