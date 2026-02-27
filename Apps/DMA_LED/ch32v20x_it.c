@@ -13,6 +13,19 @@
 
 void NMI_Handler(void) __attribute__((interrupt("WCH-Interrupt-fast")));
 void HardFault_Handler(void) __attribute__((interrupt("WCH-Interrupt-fast")));
+void TIM1_CC_IRQHandler(void) __attribute__((interrupt("WCH-Interrupt-fast")));
+
+void TIM1_UP_IRQHandler(void) __attribute__((interrupt("WCH-Interrupt-fast")));
+
+void TIM1_UP_IRQHandler(void)
+{
+  TIM_ClearITPendingBit(TIM1, TIM_IT_Update);
+}
+
+void TIM1_CC_IRQHandler(void)
+{
+  TIM_ClearITPendingBit(TIM1,TIM_IT_CC1);
+}
 
 /*********************************************************************
  * @fn      NMI_Handler

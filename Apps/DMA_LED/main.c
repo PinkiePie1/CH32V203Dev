@@ -26,6 +26,19 @@ int main(void)
     NVIC_PriorityGroupConfig(NVIC_PriorityGroup_1);
     SystemCoreClockUpdate();
     Delay_Init();
+
+    GPIO_InitTypeDef gpioInit = {0};
+    RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOB | RCC_APB2Periph_GPIOA | RCC_APB2Periph_GPIOC | RCC_APB2Periph_GPIOD, ENABLE);
+    RCC_AHBPeriphClockCmd(RCC_AHBPeriph_DMA1, ENABLE);
+
+    gpioInit.GPIO_Pin = GPIO_Pin_All;
+    gpioInit.GPIO_Mode = GPIO_Mode_IPU;
+    gpioInit.GPIO_Speed = GPIO_Speed_50MHz;
+    GPIO_Init(GPIOA, &gpioInit);
+    GPIO_Init(GPIOB, &gpioInit);
+    GPIO_Init(GPIOC, &gpioInit);
+    GPIO_Init(GPIOD, &gpioInit);
+
     USART_Printf_Init(115200);
 
     PRINT("SystemClk:%d\r\n", SystemCoreClock);
@@ -35,23 +48,33 @@ int main(void)
     LED_InitPeri();
     LED_Show();
 
-    LED_SetPixel(15,LEDON);
+    //LED_SetPixel(15,LEDON);
+    Delay_Ms(5000);
+
+    TIM_ITConfig(TIM1,TIM_IT_CC1 | TIM_IT_Update,ENABLE);
+	NVIC_EnableIRQ(TIM1_CC_IRQn);
+    NVIC_EnableIRQ(TIM1_UP_IRQn);
+
 
 
     uint32_t lednum = 0;
     u8 color = LEDON;
+    u32 iters = 0;
 
     while(1)
-    {
-        LED_SetPixel(lednum, color);
-
-        lednum += 1;
-        if(lednum > 71)
+    {   
+        if(iters++>6000)
         {
-            lednum = 0;
-            color = (color == LEDON) ? LEDOFF : LEDON;
+            iters = 0;
+            LED_SetPixel(lednum, color);
+            lednum += 1;
+            if(lednum > 71)
+            {
+                lednum = 0;
+                color = (color == LEDON) ? LEDOFF : LEDON;
+            }
         }
 
-        Delay_Ms(100);
+        __WFI();
     }
 }

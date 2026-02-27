@@ -64,7 +64,7 @@ void LED_InitPeri(void)
     LED_InitDMAChannel(DMA1_Channel3, (uint32_t)&GPIOB->CFGHR, (uint32_t)gpioCFGH);
     LED_InitDMAChannel(DMA1_Channel5, (uint32_t)&GPIOB->OUTDR, (uint32_t)dmaOutdrOff);
 
-    timBaseCfg.TIM_Prescaler = (SystemCoreClock / 10000000U) - 1U;
+    timBaseCfg.TIM_Prescaler = (SystemCoreClock / 3000000U) - 1U;
     timBaseCfg.TIM_CounterMode = TIM_CounterMode_Up;
     timBaseCfg.TIM_Period = (onTime + offTime) - 1U;
     timBaseCfg.TIM_ClockDivision = TIM_CKD_DIV1;
