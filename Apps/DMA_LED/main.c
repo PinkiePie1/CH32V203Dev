@@ -18,8 +18,21 @@
  *
  */
 
+
 #include "debug.h"
 #include "charlie.h"
+
+const uint8_t LUT[] = {
+8 ,0 ,1 ,2 ,3 ,4 ,5 ,6 ,7,
+16,17,9 ,10,11,12,13,14,15,
+24,25,26,18,19,20,21,22,23,
+32,33,34,35,27,28,29,30,31,
+40,41,42,43,44,36,37,38,39,
+48,49,50,51,52,53,45,46,47,
+56,57,58,59,60,61,62,54,55,
+64,65,66,67,68,69,70,71,63
+};
+
 
 int main(void)
 {
@@ -48,14 +61,6 @@ int main(void)
     LED_InitPeri();
     LED_Show();
 
-    //LED_SetPixel(15,LEDON);
-    Delay_Ms(5000);
-
-    TIM_ITConfig(TIM1,TIM_IT_CC1 | TIM_IT_Update,ENABLE);
-	NVIC_EnableIRQ(TIM1_CC_IRQn);
-    NVIC_EnableIRQ(TIM1_UP_IRQn);
-
-
 
     uint32_t lednum = 0;
     u8 color = LEDON;
@@ -63,10 +68,10 @@ int main(void)
 
     while(1)
     {   
-        if(iters++>6000)
+        if(iters++>3000)
         {
             iters = 0;
-            LED_SetPixel(lednum, color);
+            LED_SetPixel(LUT[lednum], color);
             lednum += 1;
             if(lednum > 71)
             {
