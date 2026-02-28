@@ -21,28 +21,16 @@
 #include "debug.h"
 #include "SandSim.h"
 #include "charlie.h"
-//#include "SSD1315.h"
 #include "LIS2DH.h"
 
 /* Global typedef */
 
 /* Global define */
 
-#define PUSH_ITER 1
-#define GRID_ITER 13
+#define PUSH_ITER 2
+#define GRID_ITER 25
 uint8_t ticks=0;
 /* Global Variable */
-
-void InitGPIO(void)
-{
-    GPIO_InitTypeDef  GPIO_InitStructure;
-    RCC_APB2PeriphClockCmd(RCC_APB2Periph_USART1 | RCC_APB2Periph_GPIOA, ENABLE);
-    GPIO_InitStructure.GPIO_Pin = GPIO_Pin_10;
-    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
-    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IN_FLOATING;
-    GPIO_Init(GPIOA, &GPIO_InitStructure);
-
-}
 
 void GetAcce(uint32_t i, _iq * accex, _iq * accey)
 {
@@ -113,23 +101,11 @@ int main(void)
     density_update();
     compute_grid_forces(GRID_ITER);
     grid_to_particles();
-    screen_update();
-
-    InitGPIO();
 
     LED_InitPeri();
     LED_Show();
 
-
-    //SoftI2CInit();
     LIS2DH_Init();
-
-
-    //OLED_Init();
-    //OLED_16(screen);
-    //OLED_TurnOn();
-
-
 
     SysTick->CTLR = 0;
     SysTick->CNT = 0;
@@ -152,21 +128,17 @@ int main(void)
     uint32_t fps = ( (5*SystemCoreClock) >> 3 )/time;
     PRINT("fps: %d \r\n",fps);
 
-
     while(1)
     {   
-
-            GetAcce(7000,&accex,&accey);
-            ParticleIntegrate(accex, accey);
-            PushParticlesApart(PUSH_ITER);
-            particles_to_grid();
-            density_update();
-            compute_grid_forces(GRID_ITER);
-            grid_to_particles();
-            Show();
-            Delay_Us(4900);
-
-        
+        GetAcce(7000,&accex,&accey);
+        ParticleIntegrate(accex, accey);
+        PushParticlesApart(PUSH_ITER);
+        particles_to_grid();
+        density_update();
+        compute_grid_forces(GRID_ITER);
+        grid_to_particles();
+        Show();
+        Delay_Us(500);
 
     }
 }
