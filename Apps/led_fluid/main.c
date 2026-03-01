@@ -60,8 +60,8 @@ void GetAcce(uint32_t i, _iq * accex, _iq * accey)
     	
         int16_t x,y,z;
         LIS2DH_Get(&x,&y,&z);
-        float xp = (float) x * -0.32f;
-        float yp = (float) y * 0.32f;
+        float xp = (float) x * -0.3f;
+        float yp = (float) y * 0.3f;
 
         *accex = _IQ(xp);
         *accey = _IQ(yp);
@@ -138,7 +138,7 @@ int main(void)
         compute_grid_forces(GRID_ITER);
         grid_to_particles();
         Show();
-        Delay_Us(500);
+        Delay_Us(7500);
 
     }
 }
