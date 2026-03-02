@@ -1,6 +1,6 @@
 #include "charlie.h"
 
-const uint8_t LUT[] = {
+static uint8_t LUT[] = {
 8 ,0 ,1 ,2 ,3 ,4 ,5 ,6 ,7,
 16,17,9 ,10,11,12,13,14,15,
 24,25,26,18,19,20,21,22,23,
@@ -75,7 +75,7 @@ void LED_InitPeri(void)
     LED_InitDMAChannel(DMA1_Channel3, (uint32_t)&GPIOB->CFGHR, (uint32_t)gpioCFGH);
     LED_InitDMAChannel(DMA1_Channel5, (uint32_t)&GPIOB->OUTDR, (uint32_t)dmaOutdrOff);
 
-    timBaseCfg.TIM_Prescaler = (SystemCoreClock / 3000000U) - 1U;
+    timBaseCfg.TIM_Prescaler = (SystemCoreClock / 10000000U) - 1U;
     timBaseCfg.TIM_CounterMode = TIM_CounterMode_Up;
     timBaseCfg.TIM_Period = (onTime + offTime) - 1U;
     timBaseCfg.TIM_ClockDivision = TIM_CKD_DIV1;
@@ -94,9 +94,9 @@ void LED_InitPeri(void)
     // CC3 -> channel 6
 
     //enable support for sleep mode. 
-    //TIM_ITConfig(TIM1,TIM_IT_CC1 | TIM_IT_Update,ENABLE);
-	//NVIC_EnableIRQ(TIM1_CC_IRQn);
-    //NVIC_EnableIRQ(TIM1_UP_IRQn);
+    TIM_ITConfig(TIM1,TIM_IT_CC1 | TIM_IT_Update,ENABLE);
+	NVIC_EnableIRQ(TIM1_CC_IRQn);
+    NVIC_EnableIRQ(TIM1_UP_IRQn);
 }
 
 // 点亮或熄灭某个LED

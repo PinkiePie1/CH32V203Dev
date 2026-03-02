@@ -128,6 +128,7 @@ int main(void)
     uint32_t fps = ( (5*SystemCoreClock) >> 3 )/time;
     PRINT("fps: %d \r\n",fps);
 
+    uint32_t timer = 0;
     while(1)
     {   
         GetAcce(7000,&accex,&accey);
@@ -138,7 +139,10 @@ int main(void)
         compute_grid_forces(GRID_ITER);
         grid_to_particles();
         Show();
-        Delay_Us(7500);
+        while(timer ++ < 1500)
+        {__WFI();}
+        timer = 0;
+        //Delay_Us(7500);
 
     }
 }
