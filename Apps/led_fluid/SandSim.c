@@ -287,8 +287,8 @@ void density_update(void) {
 }
 
 void particles_to_grid(void) {
-    memcpy(uPrev, uVel, sizeof(uVel));
-    memcpy(vPrev, vVel, sizeof(vVel));
+    //memcpy(uPrev, uVel, sizeof(uVel));
+    //memcpy(vPrev, vVel, sizeof(vVel));
 
     memset(uVel, 0, sizeof(uVel));
     memset(vVel, 0, sizeof(vVel));
@@ -375,7 +375,7 @@ void particles_to_grid(void) {
         }
     }
 }
-uint8_t ff = 99;
+
 void compute_grid_forces(unsigned int nIters) {
     //memset(pressure, 0, sizeof(pressure));
     memcpy(uPrev, uVel, sizeof(uVel));
