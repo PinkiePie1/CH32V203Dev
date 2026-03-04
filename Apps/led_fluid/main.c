@@ -27,8 +27,8 @@
 
 /* Global define */
 
-#define PUSH_ITER 2
-#define GRID_ITER 25
+#define PUSH_ITER 1
+#define GRID_ITER 14
 uint8_t ticks=0;
 /* Global Variable */
 
@@ -139,7 +139,7 @@ int main(void)
         compute_grid_forces(GRID_ITER);
         grid_to_particles();
         Show();
-        while(timer ++ < 1500)
+        while(timer ++ < 2500)
         {__WFI();}
         timer = 0;
         //Delay_Us(7500);
