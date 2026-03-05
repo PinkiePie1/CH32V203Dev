@@ -34,25 +34,28 @@ uint8_t ticks=0;
 
 
 void GPIOallPU(void){
-    GPIO_InitTypeDef gpioInit = {0};
-    RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOB | RCC_APB2Periph_GPIOA | RCC_APB2Periph_GPIOC | RCC_APB2Periph_GPIOD |RCC_APB2Periph_AFIO, ENABLE);
 
-    GPIO_PinRemapConfig(GPIO_Remap_PD0PD1,ENABLE);//OSC as input
-    gpioInit.GPIO_Pin = GPIO_Pin_All;
-    gpioInit.GPIO_Mode = GPIO_Mode_IPU;
-    gpioInit.GPIO_Speed = GPIO_Speed_50MHz;
-    GPIO_Init(GPIOA, &gpioInit);
-    GPIO_Init(GPIOB, &gpioInit);
-    GPIO_Init(GPIOC, &gpioInit);
-    GPIO_Init(GPIOD, &gpioInit);
-    gpioInit.GPIO_Pin = GPIO_Pin_3;
-    gpioInit.GPIO_Mode = GPIO_Mode_IPD;
-    gpioInit.GPIO_Speed = GPIO_Speed_50MHz;
-    GPIO_Init(GPIOA, &gpioInit);
-    gpioInit.GPIO_Pin = GPIO_Pin_0;
-    gpioInit.GPIO_Mode = GPIO_Mode_IPU;
-    gpioInit.GPIO_Speed = GPIO_Speed_50MHz;
-    GPIO_Init(GPIOA, &gpioInit);
+RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOB | RCC_APB2Periph_GPIOA | RCC_APB2Periph_GPIOC| RCC_APB2Periph_GPIOD |RCC_APB2Periph_AFIO, ENABLE);
+
+
+    GPIOA->OUTDR = 0xFFFFFFFF;
+    GPIOB->OUTDR = 0xFFFFFFFF;
+    GPIOC->OUTDR = 0xFFFFFFFF;
+    GPIOD->OUTDR = 0xFFFFFFFF;
+
+
+    GPIOA->CFGLR=0x88888888;
+    GPIOA->CFGHR=0x88888888;
+    GPIOB->CFGLR=0x88888888;
+    GPIOB->CFGHR=0x88888888;
+    GPIOC->CFGLR=0x88888888;
+    GPIOC->CFGHR=0x88888888;
+    GPIOD->CFGLR=0x88888888;
+    GPIOD->CFGHR=0x88888888;
+
+    
+    
+
 }
 
 void shutdown(void){
@@ -61,14 +64,33 @@ void shutdown(void){
     NVIC_DisableIRQ(TIM1_CC_IRQn);
     NVIC_DisableIRQ(TIM1_UP_IRQn);
     GPIO_PinRemapConfig(GPIO_Remap_SWJ_Disable,ENABLE);
+    DMA_Cmd(DMA1_Channel2,DISABLE);
+    DMA_Cmd(DMA1_Channel3,DISABLE);
+    DMA_Cmd(DMA1_Channel5,DISABLE);
+    DMA_Cmd(DMA1_Channel6,DISABLE);
+    LIS2DH_Deinit();
+    SPI_Cmd(SPI1,DISABLE);
+    USART_DeInit(USART1);
+    GPIOallPU();
+
+    PWR_EnterSTANDBYMode();
+
+/*
+    LIS2DH_Deinit();
+
     DMA_DeInit(DMA1_Channel2);
     DMA_DeInit(DMA1_Channel3);
     DMA_DeInit(DMA1_Channel5);
     DMA_DeInit(DMA1_Channel6);
+    TIM_Cmd(TIM1,DISABLE);
+    SPI_Cmd(SPI1,DISABLE);
+    SPI_I2S_DeInit(SPI1);
+    GPIO_PinRemapConfig(GPIO_Remap_SWJ_Disable,ENABLE);
     GPIOallPU();
-    LIS2DH_Deinit();
-    RCC_APB2PeriphClockCmd(0xFFFF,DISABLE);
+    RCC_APB1PeriphClockCmd(RCC_APB1Periph_PWR, ENABLE);
+
     PWR_EnterSTANDBYMode();
+*/
 }
 
 
@@ -100,6 +122,7 @@ void Show(void)
  */
 int main(void)
 {
+    
     NVIC_PriorityGroupConfig(NVIC_PriorityGroup_1);
     SystemCoreClockUpdate();
     Delay_Init();
@@ -118,13 +141,11 @@ int main(void)
     density_update();
     compute_grid_forces(GRID_ITER);
     grid_to_particles();
-    
 
     LED_InitPeri();
     LED_Show();
-
-
     Show();
+
     LIS2DH_Init();
 
     SysTick->CTLR = 0;
@@ -147,6 +168,8 @@ int main(void)
     time = SysTick->CNT - time;
     uint32_t fps = ( (5*SystemCoreClock) >> 3 )/time;
     PRINT("fps: %d \r\n",fps);
+
+
 
     uint32_t timer = 0;
     while(1)

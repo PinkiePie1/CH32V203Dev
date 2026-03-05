@@ -52,7 +52,6 @@ void LIS2DH_Init(void)
 
     CS_HIGH;
     SCL_HIGH;
-    SDA_LOW;
 
     GPIO_InitStructure.GPIO_Pin   = GPIO_Pin_4;
     GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_Out_PP;
@@ -101,7 +100,8 @@ void LIS2DH_Init(void)
         PRINT("Found LIS2DH!\r\n");
         LIS2DH_Write(0x23,0x30);//16G FS
         LIS2DH_Write(0x20,0x67);//200Hz ODR,normal mode, xyz all enable
-        LIS2DH_Write(0x1E,0x00);//disable pullup
+        LIS2DH_Write(0x1E,0x90);//enable pullup
+        LIS2DH_Write(0x25,0x02);//INT active low
         LIS2DH_Write(0x1F,0x00);//disable adc and temperature
 
     }
@@ -116,7 +116,8 @@ void LIS2DH_Init(void)
 
 void LIS2DH_Deinit(void)
 {
-    LIS2DH_Write(0x20,0x00);//powerdown LIS2DH
+    //LIS2DH_Write(0x24,0x80);//reboot memory content
+    LIS2DH_Write(0x20,0x07);//powerdown LIS2DH
 
 }
 
