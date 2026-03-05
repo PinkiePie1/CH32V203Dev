@@ -99,10 +99,11 @@ void LIS2DH_Init(void)
     if (  buf[0] == 0x33 )
     {
         PRINT("Found LIS2DH!\r\n");
+        LIS2DH_Write(0x23,0x30);//16G FS
+        LIS2DH_Write(0x20,0x67);//200Hz ODR,normal mode, xyz all enable
+        LIS2DH_Write(0x1E,0x00);//disable pullup
+        LIS2DH_Write(0x1F,0x00);//disable adc and temperature
 
-        LIS2DH_Write(0x20,0x37);
-        LIS2DH_Write(0x23,0x30);
-        LIS2DH_Write(0x20,0x67);
     }
     else
     {
@@ -110,6 +111,12 @@ void LIS2DH_Init(void)
     }
 
     return;
+
+}
+
+void LIS2DH_Deinit(void)
+{
+    LIS2DH_Write(0x20,0x00);//powerdown LIS2DH
 
 }
 

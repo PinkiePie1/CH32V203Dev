@@ -4,13 +4,13 @@
 #include "debug.h"
 
 /* Global typedef */
-#define onTime 3
+#define onTime 4
 #define offTime (100U-onTime)
 /* Global define */
 
 #define LEDON 1
 #define LEDOFF 0
-#define PinCount 9
+#define PinCount 16
 /* Global Variable */
 
 void LED_SetPixel(uint16_t num, uint8_t color);
