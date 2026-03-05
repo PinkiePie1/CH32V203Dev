@@ -4,11 +4,11 @@
 #include "debug.h"
 
 //模拟所用的参数
-#define NumberOfParticles 60U //粒子数量15
-#define ParticleRadius _IQ(0.016f) //粒子半径
+#define NumberOfParticles 130U //粒子数量15
+#define ParticleRadius _IQ(0.017f) //粒子半径
 #define Spacing _IQ(0.05f)//网格间距
-#define CellNumX 10U //x轴方向的网格数量
-#define CellNumY 11U //y轴方向的网格数量
+#define CellNumX 17U //x轴方向的网格数量
+#define CellNumY 18U //y轴方向的网格数量
 #define CellCount CellNumX*CellNumY //网格总数
 #define dt _IQ(0.016f) //时间步长
 #define BOUNCYNESS _IQ(-0.9f) //墙壁的弹性。

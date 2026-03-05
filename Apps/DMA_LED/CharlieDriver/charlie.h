@@ -4,7 +4,7 @@
 #include "debug.h"
 
 /* Global typedef */
-#define onTime 15
+#define onTime 25
 #define offTime (100U-onTime)
 /* Global define */
 

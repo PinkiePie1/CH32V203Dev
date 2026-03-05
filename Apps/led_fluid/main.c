@@ -28,45 +28,60 @@
 /* Global define */
 
 #define PUSH_ITER 1
-#define GRID_ITER 14
+#define GRID_ITER 12
 uint8_t ticks=0;
 /* Global Variable */
 
+
+void GPIOallPU(void){
+    GPIO_InitTypeDef gpioInit = {0};
+    RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOB | RCC_APB2Periph_GPIOA | RCC_APB2Periph_GPIOC | RCC_APB2Periph_GPIOD |RCC_APB2Periph_AFIO, ENABLE);
+
+    GPIO_PinRemapConfig(GPIO_Remap_PD0PD1,ENABLE);//OSC as input
+    gpioInit.GPIO_Pin = GPIO_Pin_All;
+    gpioInit.GPIO_Mode = GPIO_Mode_IPU;
+    gpioInit.GPIO_Speed = GPIO_Speed_50MHz;
+    GPIO_Init(GPIOA, &gpioInit);
+    GPIO_Init(GPIOB, &gpioInit);
+    GPIO_Init(GPIOC, &gpioInit);
+    GPIO_Init(GPIOD, &gpioInit);
+    gpioInit.GPIO_Pin = GPIO_Pin_3;
+    gpioInit.GPIO_Mode = GPIO_Mode_IPD;
+    gpioInit.GPIO_Speed = GPIO_Speed_50MHz;
+    GPIO_Init(GPIOA, &gpioInit);
+    gpioInit.GPIO_Pin = GPIO_Pin_0;
+    gpioInit.GPIO_Mode = GPIO_Mode_IPU;
+    gpioInit.GPIO_Speed = GPIO_Speed_50MHz;
+    GPIO_Init(GPIOA, &gpioInit);
+}
+
+void shutdown(void){
+
+    TIM_Cmd(TIM1,DISABLE);
+    NVIC_DisableIRQ(TIM1_CC_IRQn);
+    NVIC_DisableIRQ(TIM1_UP_IRQn);
+    GPIO_PinRemapConfig(GPIO_Remap_SWJ_Disable,ENABLE);
+    DMA_DeInit(DMA1_Channel2);
+    DMA_DeInit(DMA1_Channel3);
+    DMA_DeInit(DMA1_Channel5);
+    DMA_DeInit(DMA1_Channel6);
+    GPIOallPU();
+    LIS2DH_Deinit();
+    RCC_APB2PeriphClockCmd(0xFFFF,DISABLE);
+    PWR_EnterSTANDBYMode();
+}
+
+
 void GetAcce(uint32_t i, _iq * accex, _iq * accey)
 {
-    if (i<300)
-    {
-        *accex = _IQ(0);
-        *accey = _IQ(9.8f);
-    } 
-    else if (i < 600)
-    {
-        _iq t = _IQmpy(_IQ(0.02f),_IQ((i-590)));
-        *accex = _IQmpy(_IQ(10.0f),_IQsin(t));
-        *accey = _IQmpy(_IQ(10.0f),_IQcos(t));
-    }
-    else if (i < 900)
-    {
-        *accex = _IQ(9.8f);
-        *accey = _IQ(0);
-    }
-    else if (i < 1200)
-    {
-        *accex = _IQ(-9.8f);
-        *accey = _IQ(0);
-    }
-    else
-    {
-    	
-        int16_t x,y,z;
-        LIS2DH_Get(&x,&y,&z);
-        float xp = (float) x * -0.3f;
-        float yp = (float) y * 0.3f;
+    int16_t x,y,z;
+    LIS2DH_Get(&x,&y,&z);
+    float xp = (float) y * -0.3f;
+    float yp = (float) x * 0.3f;
 
-        *accex = _IQ(xp);
-        *accey = _IQ(yp);
-        
-    }
+    *accex = _IQ(xp);
+    *accey = _IQ(yp);
+
 }
 
 
@@ -88,6 +103,8 @@ int main(void)
     NVIC_PriorityGroupConfig(NVIC_PriorityGroup_1);
     SystemCoreClockUpdate();
     Delay_Init();
+    GPIOallPU();
+    while(GPIO_ReadInputDataBit(GPIOA,GPIO_Pin_0) == Bit_RESET);
     USART_Printf_Init(115200);
 
     PRINT("SystemClk:%d\r\n", SystemCoreClock);
@@ -101,10 +118,13 @@ int main(void)
     density_update();
     compute_grid_forces(GRID_ITER);
     grid_to_particles();
+    
 
     LED_InitPeri();
     LED_Show();
 
+
+    Show();
     LIS2DH_Init();
 
     SysTick->CTLR = 0;
@@ -131,6 +151,8 @@ int main(void)
     uint32_t timer = 0;
     while(1)
     {   
+        NVIC_DisableIRQ(TIM1_CC_IRQn);
+        NVIC_DisableIRQ(TIM1_UP_IRQn);
         GetAcce(7000,&accex,&accey);
         ParticleIntegrate(accex, accey);
         PushParticlesApart(PUSH_ITER);
@@ -139,10 +161,20 @@ int main(void)
         compute_grid_forces(GRID_ITER);
         grid_to_particles();
         Show();
-        while(timer ++ < 2500)
+        NVIC_EnableIRQ(TIM1_CC_IRQn);
+        NVIC_EnableIRQ(TIM1_UP_IRQn);
+        while(timer ++ < 230)
         {__WFI();}
         timer = 0;
-        //Delay_Us(7500);
+        if(GPIO_ReadInputDataBit(GPIOA,GPIO_Pin_0) == Bit_RESET){
+            Delay_Ms(30);
+            if(GPIO_ReadInputDataBit(GPIOA,GPIO_Pin_0) == Bit_RESET){
+                while(GPIO_ReadInputDataBit(GPIOA,GPIO_Pin_0) == Bit_RESET);
+                Delay_Ms(30);
+                shutdown();
+            }
+        }
+        //Delay_Us(500);
 
     }
 }

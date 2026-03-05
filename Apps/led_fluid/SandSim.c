@@ -497,11 +497,11 @@ void screen_update() {
             x--;
             y--;
             if (cell == FLUID_CELL) {
-                LED_SetPixel(x*9+y,LEDON);
+                LED_SetPixel(x*16+y,LEDON);
             } else if (cell == SOLID_CELL) {
-                LED_SetPixel(x*9+y,LEDON);
+                LED_SetPixel(x*16+y,LEDON);
             } else {
-                LED_SetPixel(x*9+y,LEDOFF);
+                LED_SetPixel(x*16+y,LEDOFF);
             }
             x++;
             y++;
