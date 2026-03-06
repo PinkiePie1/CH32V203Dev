@@ -60,3 +60,6 @@ compile_commands.json
 .cache
 objs
 .vscode
+
+#testfolders
+*test_
