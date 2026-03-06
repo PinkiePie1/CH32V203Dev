@@ -36,61 +36,30 @@ uint8_t ticks=0;
 void GPIOallPU(void){
 
 RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOB | RCC_APB2Periph_GPIOA | RCC_APB2Periph_GPIOC| RCC_APB2Periph_GPIOD |RCC_APB2Periph_AFIO, ENABLE);
+GPIOA->OUTDR = 0xFFFFFFFF;
+GPIOB->OUTDR = 0xFFFFFFFF;
+GPIOC->OUTDR = 0xFFFFFFFF;
+GPIOD->OUTDR = 0xFFFFFFFF;
 
-
-    GPIOA->OUTDR = 0xFFFFFFFF;
-    GPIOB->OUTDR = 0xFFFFFFFF;
-    GPIOC->OUTDR = 0xFFFFFFFF;
-    GPIOD->OUTDR = 0xFFFFFFFF;
-
-
-    GPIOA->CFGLR=0x88888888;
-    GPIOA->CFGHR=0x88888888;
-    GPIOB->CFGLR=0x88888888;
-    GPIOB->CFGHR=0x88888888;
-    GPIOC->CFGLR=0x88888888;
-    GPIOC->CFGHR=0x88888888;
-    GPIOD->CFGLR=0x88888888;
-    GPIOD->CFGHR=0x88888888;
-
-    
-    
+GPIOA->CFGLR=0x88888888;
+GPIOA->CFGHR=0x88888888;
+GPIOB->CFGLR=0x88888888;
+GPIOB->CFGHR=0x88888888;
+GPIOC->CFGLR=0x88888888;
+GPIOC->CFGHR=0x88888888;
+GPIOD->CFGLR=0x88888888;
+GPIOD->CFGHR=0x88888888;
 
 }
 
 void shutdown(void){
 
-    TIM_Cmd(TIM1,DISABLE);
-    NVIC_DisableIRQ(TIM1_CC_IRQn);
-    NVIC_DisableIRQ(TIM1_UP_IRQn);
     GPIO_PinRemapConfig(GPIO_Remap_SWJ_Disable,ENABLE);
-    DMA_Cmd(DMA1_Channel2,DISABLE);
-    DMA_Cmd(DMA1_Channel3,DISABLE);
-    DMA_Cmd(DMA1_Channel5,DISABLE);
-    DMA_Cmd(DMA1_Channel6,DISABLE);
     LIS2DH_Deinit();
-    SPI_Cmd(SPI1,DISABLE);
-    USART_DeInit(USART1);
     GPIOallPU();
-
-    PWR_EnterSTANDBYMode();
-
-/*
-    LIS2DH_Deinit();
-
-    DMA_DeInit(DMA1_Channel2);
-    DMA_DeInit(DMA1_Channel3);
-    DMA_DeInit(DMA1_Channel5);
-    DMA_DeInit(DMA1_Channel6);
-    TIM_Cmd(TIM1,DISABLE);
-    SPI_Cmd(SPI1,DISABLE);
-    SPI_I2S_DeInit(SPI1);
-    GPIO_PinRemapConfig(GPIO_Remap_SWJ_Disable,ENABLE);
-    GPIOallPU();
-    RCC_APB1PeriphClockCmd(RCC_APB1Periph_PWR, ENABLE);
-
-    PWR_EnterSTANDBYMode();
-*/
+    RCC_APB1PeriphClockCmd(RCC_APB1Periph_PWR,ENABLE);
+    PWR_EnterSTOPMode(PWR_Regulator_LowPower,PWR_STOPEntry_WFI);
+    NVIC_SystemReset();
 }
 
 
