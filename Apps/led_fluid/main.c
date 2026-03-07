@@ -113,6 +113,7 @@ int main(void)
 
     LED_InitPeri();
     LED_Show();
+    
     Show();
 
     LIS2DH_Init();
@@ -143,8 +144,8 @@ int main(void)
     uint32_t timer = 0;
     while(1)
     {   
-        NVIC_DisableIRQ(TIM1_CC_IRQn);
-        NVIC_DisableIRQ(TIM1_UP_IRQn);
+        //NVIC_DisableIRQ(TIM1_CC_IRQn);
+        //
         GetAcce(7000,&accex,&accey);
         ParticleIntegrate(accex, accey);
         PushParticlesApart(PUSH_ITER);
@@ -153,9 +154,9 @@ int main(void)
         compute_grid_forces(GRID_ITER);
         grid_to_particles();
         Show();
-        NVIC_EnableIRQ(TIM1_CC_IRQn);
-        NVIC_EnableIRQ(TIM1_UP_IRQn);
-        while(timer ++ < 230)
+        //NVIC_EnableIRQ(TIM1_CC_IRQn);
+        //NVIC_EnableIRQ(TIM1_UP_IRQn);
+        while(timer ++ < 330)
         {__WFI();}
         timer = 0;
         if(GPIO_ReadInputDataBit(GPIOA,GPIO_Pin_0) == Bit_RESET){
