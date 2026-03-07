@@ -100,15 +100,15 @@ void LED_InitPeri(void)
     LED_InitDMAChannel(DMA1_Channel3, (uint32_t)&GPIOB->CFGHR, (uint32_t)gpioCFGH);
     LED_InitDMAChannel(DMA1_Channel5, (uint32_t)&GPIOB->OUTDR, (uint32_t)dmaOutdrOff);
 
-    timBaseCfg.TIM_Prescaler = (SystemCoreClock / 1000000U) - 1U;
+    timBaseCfg.TIM_Prescaler = (SystemCoreClock / 8000000U) - 1U;
     timBaseCfg.TIM_CounterMode = TIM_CounterMode_Up;
     timBaseCfg.TIM_Period = (onTime + offTime) - 1U;
     timBaseCfg.TIM_ClockDivision = TIM_CKD_DIV1;
     timBaseCfg.TIM_RepetitionCounter = 0;
     TIM_TimeBaseInit(TIM1, &timBaseCfg);
 
-    TIM_SetCompare1(TIM1,1);
-    TIM_SetCompare2(TIM1,1);
+    TIM_SetCompare1(TIM1,10);
+    TIM_SetCompare2(TIM1,10);
     TIM_SetCompare3(TIM1,offTime);
 
 
@@ -188,14 +188,14 @@ void LED_Show(void)
 
 //
 
-
-
-
 void TIM1_CC_IRQHandler(void) __attribute__((interrupt("WCH-Interrupt-fast")));
 void TIM1_UP_IRQHandler(void) __attribute__((interrupt("WCH-Interrupt-fast")));
 
 void TIM1_UP_IRQHandler(void)
 {
+    u8 rowNum = 16-(uint16_t)(DMA1_Channel3->CNTR);
+    u16 adj = offTime-(bright[rowNum]<<1);
+    TIM_SetCompare3(TIM1,adj);
     TIM_ClearITPendingBit(TIM1, TIM_IT_Update);
 }
 
