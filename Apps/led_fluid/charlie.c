@@ -193,6 +193,9 @@ void TIM1_UP_IRQHandler(void) __attribute__((interrupt("WCH-Interrupt-fast")));
 
 void TIM1_UP_IRQHandler(void)
 {
+    GPIOB->BSHR=0xFFFFFFFF;
+    GPIOB->CFGHR=0x33333333;
+    GPIOB->CFGLR=0x33333333;
     u8 rowNum = 16-(uint16_t)(DMA1_Channel3->CNTR);
     u16 adj = offTime-(bright[rowNum]<<1);
     TIM_SetCompare3(TIM1,adj);
