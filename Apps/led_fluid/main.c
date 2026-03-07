@@ -124,6 +124,7 @@ int main(void)
     uint32_t time = SysTick->CNT;
     _iq accex = _IQ(0);
     _iq accey = _IQ(9.8f);
+
     for (int i=0;i<5;i++){
         GetAcce(7000,&accex,&accey);
         ParticleIntegrate(accex, accey);
@@ -145,7 +146,7 @@ int main(void)
     while(1)
     {   
         NVIC_DisableIRQ(TIM1_CC_IRQn);
-        //
+        NVIC_DisableIRQ(TIM1_UP_IRQn);
         GetAcce(7000,&accex,&accey);
         ParticleIntegrate(accex, accey);
         PushParticlesApart(PUSH_ITER);
@@ -155,8 +156,8 @@ int main(void)
         grid_to_particles();
         Show();
         NVIC_EnableIRQ(TIM1_CC_IRQn);
-        //NVIC_EnableIRQ(TIM1_UP_IRQn);
-        while(timer ++ < 330)
+        NVIC_EnableIRQ(TIM1_UP_IRQn);
+        while(timer ++ < 360)
         {__WFI();}
         timer = 0;
         if(GPIO_ReadInputDataBit(GPIOA,GPIO_Pin_0) == Bit_RESET){

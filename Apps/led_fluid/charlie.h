@@ -4,8 +4,8 @@
 #include "debug.h"
 
 /* Global typedef */
-#define onTime 15
-#define offTime (500U-onTime)
+#define onTime 15U
+#define offTime (300U-onTime)
 /* Global define */
 
 #define LEDON 1
