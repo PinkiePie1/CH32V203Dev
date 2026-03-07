@@ -1,7 +1,5 @@
 #include "charlie.h"
 
-uint8_t row = 0;
-
 static uint8_t LUT[] = {
 15,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,
 
@@ -34,23 +32,22 @@ static uint8_t LUT[] = {
 225,226,227,228,229,230,231,232,233,234,235,236,237,238,239,224
 };
 
-static uint8_t bright[PinCount] = {0};//records the number of led for each row to adjust brightness
+static uint16_t bright[PinCount] = {offTime};//records the number of led for each row to adjust brightness
 
 static uint32_t gpioCFGL[16] =
-{0X00000003,0X00000030,0X00000300,0X00003000,
- 0X00030000,0X00300000,0X03000000,0X30000000,
- 0X00000000,0X00000000,0X00000000,0X00000000,
- 0X00000000,0X00000000,0X00000000,0X00000000};
+{0X44444443,0X44444434,0X44444344,0X44443444,
+ 0X44434444,0X44344444,0X43444444,0X34444444,
+ 0X44444444,0X44444444,0X44444444,0X44444444,
+ 0X44444444,0X44444444,0X44444444,0X44444444};
 
 static uint32_t gpioCFGH[16] =
-{0X00000000,0X00000000,0X00000000,0X00000000,
- 0X00000000,0X00000000,0X00000000,0X00000000,
- 0X00000003,0X00000030,0X00000300,0X00003000,
- 0X00030000,0X00300000,0X03000000,0X30000000};
+{0X44444444,0X44444444,0X44444444,0X44444444,
+ 0X44444444,0X44444444,0X44444444,0X44444444,
+ 0X44444443,0X44444434,0X44444344,0X44443444,
+ 0X44434444,0X44344444,0X43444444,0X34444444};
 
 static uint32_t dmaOutdrOn[PinCount];
 static uint32_t dmaOutdrOff[PinCount];
-static uint8_t  ledRunning = 0;
 
 static void LED_RebuildDMABuffer(void)
 {
@@ -58,6 +55,7 @@ static void LED_RebuildDMABuffer(void)
     {
         dmaOutdrOn[i] = (uint32_t)1U << i;
         dmaOutdrOff[i] = 0xFFFFFFFF;
+        bright[i]=offTime;
     }
 }
 
@@ -74,6 +72,25 @@ static void LED_InitDMAChannel(DMA_Channel_TypeDef *ch, uint32_t periph, uint32_
     dmaCfg.DMA_MemoryInc = DMA_MemoryInc_Enable;
     dmaCfg.DMA_PeripheralDataSize = DMA_PeripheralDataSize_Word;
     dmaCfg.DMA_MemoryDataSize = DMA_MemoryDataSize_Word;
+    dmaCfg.DMA_Mode = DMA_Mode_Circular;
+    dmaCfg.DMA_Priority = DMA_Priority_High;
+    dmaCfg.DMA_M2M = DMA_M2M_Disable;
+    DMA_Init(ch, &dmaCfg);
+}
+
+static void LED_InitDMAChannelHalfWord(DMA_Channel_TypeDef *ch, uint32_t periph, uint32_t mem)
+{
+    DMA_InitTypeDef dmaCfg = {0};
+
+    DMA_DeInit(ch);
+    dmaCfg.DMA_PeripheralBaseAddr = periph;
+    dmaCfg.DMA_MemoryBaseAddr = mem;
+    dmaCfg.DMA_DIR = DMA_DIR_PeripheralDST;
+    dmaCfg.DMA_BufferSize = PinCount;
+    dmaCfg.DMA_PeripheralInc = DMA_PeripheralInc_Disable;
+    dmaCfg.DMA_MemoryInc = DMA_MemoryInc_Enable;
+    dmaCfg.DMA_PeripheralDataSize = DMA_PeripheralDataSize_HalfWord;
+    dmaCfg.DMA_MemoryDataSize = DMA_MemoryDataSize_HalfWord;
     dmaCfg.DMA_Mode = DMA_Mode_Circular;
     dmaCfg.DMA_Priority = DMA_Priority_High;
     dmaCfg.DMA_M2M = DMA_M2M_Disable;
@@ -99,22 +116,22 @@ void LED_InitPeri(void)
     LED_InitDMAChannel(DMA1_Channel2, (uint32_t)&GPIOB->CFGLR, (uint32_t)gpioCFGL);
     LED_InitDMAChannel(DMA1_Channel3, (uint32_t)&GPIOB->CFGHR, (uint32_t)gpioCFGH);
     LED_InitDMAChannel(DMA1_Channel5, (uint32_t)&GPIOB->BSHR, (uint32_t)dmaOutdrOff);
-    //LED_InitDMAChannel(DMA1_Channel4, (uint32_t)&GPIOB->OUTDR, (uint32_t)dmaOutdrOff);
+    LED_InitDMAChannelHalfWord(DMA1_Channel4, (uint32_t)&TIM1->CH3CVR, (uint32_t)bright);
 
-    timBaseCfg.TIM_Prescaler = (SystemCoreClock / 8000000U) - 1U;
+    timBaseCfg.TIM_Prescaler = 20;
     timBaseCfg.TIM_CounterMode = TIM_CounterMode_Up;
     timBaseCfg.TIM_Period = (onTime + offTime) - 1U;
     timBaseCfg.TIM_ClockDivision = TIM_CKD_DIV1;
     timBaseCfg.TIM_RepetitionCounter = 0;
     TIM_TimeBaseInit(TIM1, &timBaseCfg);
 
-    TIM_SetCompare1(TIM1,10);
-    TIM_SetCompare2(TIM1,10);
+    TIM_SetCompare1(TIM1,1);
+    TIM_SetCompare2(TIM1,1);
     TIM_SetCompare3(TIM1,offTime);
-    //TIM_SetCompare4(TIM1,offTime);
+    TIM_SetCompare4(TIM1,1);
 
 
-    TIM_DMACmd(TIM1, TIM_DMA_Update | TIM_DMA_CC1 | TIM_DMA_CC2 | TIM_DMA_CC3, ENABLE);
+    TIM_DMACmd(TIM1, TIM_DMA_Update | TIM_DMA_CC1 | TIM_DMA_CC2 | TIM_DMA_CC3 |TIM_DMA_CC4, ENABLE);
     // update-> channel 5
     // CC1 -> channel 2
     // CC2 -> channel 3
@@ -149,60 +166,47 @@ void LED_SetPixel(uint16_t num, uint8_t color)
     {
         if(x >= 8)
         {
-            gpioCFGH[y] &= ~(0x3 << ((x - 8) * 4));
+            gpioCFGH[y] &= ~(0xF << ((x - 8) * 4));
         }
         else
         {
-            gpioCFGL[y] &= ~(0x3 << (x * 4));
+            gpioCFGL[y] &= ~(0xF << (x * 4));
         }
     }
     u8 count = 0;
-    for (u8 i = 0; i < 8; i++){
-        if( (gpioCFGH[y]>>(i*4)) & 0x3){count +=1;}
-        if( (gpioCFGL[y]>>(i*4)) & 0x3){count +=1;}
+    for (u32 comp = 0x3; comp; comp<<=4)
+    {
+        count = comp & gpioCFGH[y]?count+1:count;
+        count = comp & gpioCFGL[y]?count+1:count;
     }
-    bright[y] = count-1;
+    count -= 1;
+    bright[y] = offTime-count;
     //PRINT("birght:[%d] is : %d\r\n",y,bright[y]);
 }
 
 // 开启显示，启动timer触发DMA自动刷新GPIO寄存器
 void LED_Show(void)
 {
-    if(ledRunning)
-    {
-        return;
-    }
-
-    DMA_SetCurrDataCounter(DMA1_Channel5, PinCount);
-    DMA_SetCurrDataCounter(DMA1_Channel2, PinCount);
-    DMA_SetCurrDataCounter(DMA1_Channel3, PinCount);
-    DMA_SetCurrDataCounter(DMA1_Channel6, PinCount);
-
     DMA_Cmd(DMA1_Channel5, ENABLE);
     DMA_Cmd(DMA1_Channel2, ENABLE);
+    DMA_Cmd(DMA1_Channel4, ENABLE);
     DMA_Cmd(DMA1_Channel3, ENABLE);
     DMA_Cmd(DMA1_Channel6, ENABLE);
 
     TIM_SetCounter(TIM1, 0);
     TIM_Cmd(TIM1, ENABLE);
 
-    ledRunning = 1;
 }
-
-//
 
 void TIM1_CC_IRQHandler(void) __attribute__((interrupt("WCH-Interrupt-fast")));
 void TIM1_UP_IRQHandler(void) __attribute__((interrupt("WCH-Interrupt-fast")));
 
 void TIM1_UP_IRQHandler(void)
 {
-    u8 rowNum = 16-(uint16_t)(DMA1_Channel3->CNTR);
-    u16 adj = offTime-(bright[rowNum]<<1);
-    TIM_SetCompare3(TIM1,adj);
     TIM_ClearITPendingBit(TIM1, TIM_IT_Update);
 }
 
 void TIM1_CC_IRQHandler(void)
 {
-    TIM_ClearITPendingBit(TIM1,TIM_IT_CC1|TIM_IT_CC3);
+    TIM_ClearITPendingBit(TIM1,TIM_IT_CC1|TIM_IT_CC3|TIM_IT_CC4);
 }
