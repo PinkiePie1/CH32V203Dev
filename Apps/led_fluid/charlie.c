@@ -57,7 +57,7 @@ static void LED_RebuildDMABuffer(void)
     for(u8 i = 0; i < PinCount; i++)
     {
         dmaOutdrOn[i] = (uint32_t)1U << i;
-        dmaOutdrOff[i] = 0;
+        dmaOutdrOff[i] = 0xFFFFFFFF;
     }
 }
 
@@ -98,7 +98,8 @@ void LED_InitPeri(void)
     LED_InitDMAChannel(DMA1_Channel6, (uint32_t)&GPIOB->OUTDR, (uint32_t)dmaOutdrOn);
     LED_InitDMAChannel(DMA1_Channel2, (uint32_t)&GPIOB->CFGLR, (uint32_t)gpioCFGL);
     LED_InitDMAChannel(DMA1_Channel3, (uint32_t)&GPIOB->CFGHR, (uint32_t)gpioCFGH);
-    LED_InitDMAChannel(DMA1_Channel5, (uint32_t)&GPIOB->OUTDR, (uint32_t)dmaOutdrOff);
+    LED_InitDMAChannel(DMA1_Channel5, (uint32_t)&GPIOB->BSHR, (uint32_t)dmaOutdrOff);
+    //LED_InitDMAChannel(DMA1_Channel4, (uint32_t)&GPIOB->OUTDR, (uint32_t)dmaOutdrOff);
 
     timBaseCfg.TIM_Prescaler = (SystemCoreClock / 8000000U) - 1U;
     timBaseCfg.TIM_CounterMode = TIM_CounterMode_Up;
@@ -110,6 +111,7 @@ void LED_InitPeri(void)
     TIM_SetCompare1(TIM1,10);
     TIM_SetCompare2(TIM1,10);
     TIM_SetCompare3(TIM1,offTime);
+    //TIM_SetCompare4(TIM1,offTime);
 
 
     TIM_DMACmd(TIM1, TIM_DMA_Update | TIM_DMA_CC1 | TIM_DMA_CC2 | TIM_DMA_CC3, ENABLE);
@@ -117,6 +119,7 @@ void LED_InitPeri(void)
     // CC1 -> channel 2
     // CC2 -> channel 3
     // CC3 -> channel 6
+    // CC4 -> channel 4
 
     //enable support for sleep mode. 
     TIM_ITConfig(TIM1,TIM_IT_CC1 | TIM_IT_CC3 | TIM_IT_Update,ENABLE);
@@ -193,9 +196,6 @@ void TIM1_UP_IRQHandler(void) __attribute__((interrupt("WCH-Interrupt-fast")));
 
 void TIM1_UP_IRQHandler(void)
 {
-    GPIOB->BSHR=0xFFFFFFFF;
-    GPIOB->CFGHR=0x33333333;
-    GPIOB->CFGLR=0x33333333;
     u8 rowNum = 16-(uint16_t)(DMA1_Channel3->CNTR);
     u16 adj = offTime-(bright[rowNum]<<1);
     TIM_SetCompare3(TIM1,adj);
