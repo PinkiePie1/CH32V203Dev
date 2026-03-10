@@ -157,7 +157,7 @@ int main(void)
         Show();
         NVIC_EnableIRQ(TIM1_CC_IRQn);
         NVIC_EnableIRQ(TIM1_UP_IRQn);
-        while(timer ++ < 360)
+        while(timer ++ < 10)
         {__WFI();}
         timer = 0;
         if(GPIO_ReadInputDataBit(GPIOA,GPIO_Pin_0) == Bit_RESET){

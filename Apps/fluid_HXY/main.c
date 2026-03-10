@@ -21,6 +21,7 @@
 #include "debug.h"
 #include "SandSim.h"
 #include "LIS2DWHXY.h"
+#include "charlie.h"
 
 /* Global typedef */
 
@@ -30,6 +31,8 @@
 #define GRID_ITER 12
 uint8_t ticks=0;
 /* Global Variable */
+
+
 
 
 void GPIOallPU(void){
@@ -51,6 +54,36 @@ GPIOD->CFGHR=0x88888888;
 
 }
 
+void shutdown(void){
+
+    GPIO_PinRemapConfig(GPIO_Remap_SWJ_Disable,ENABLE);
+    LIS2DWHXY_Deinit();
+    GPIOallPU();
+    RCC_APB1PeriphClockCmd(RCC_APB1Periph_PWR,ENABLE);
+    PWR_EnterSTOPMode(PWR_Regulator_LowPower,PWR_STOPEntry_WFI);
+    NVIC_SystemReset();
+}
+
+
+void GetAcce(uint32_t i, _iq * accex, _iq * accey)
+{
+    int16_t x,y,z;
+    LIS2DWHXY_Get(&x,&y,&z);
+    float xp = (float) y * -0.3f;
+    float yp = (float) x * 0.3f;
+
+    *accex = _IQ(xp);
+    *accey = _IQ(yp);
+
+}
+
+
+void Show(void)
+{
+    
+    screen_update();
+    
+}
 
 
 /*********************************************************************
@@ -62,10 +95,12 @@ GPIOD->CFGHR=0x88888888;
  */
 int main(void)
 {
-    
+    uint32_t timer = 0;
     NVIC_PriorityGroupConfig(NVIC_PriorityGroup_1);
     SystemCoreClockUpdate();
     Delay_Init();
+    GPIOallPU();
+    while(GPIO_ReadInputDataBit(GPIOA,GPIO_Pin_0) == Bit_RESET);
     USART_Printf_Init(115200);
 
     PRINT("SystemClk:%d\r\n", SystemCoreClock);
@@ -74,11 +109,77 @@ int main(void)
 
     LIS2DWHXY_Init();
 
+    InitParticles();
+    ParticleIntegrate(0, _IQ(9.8f));
+    PushParticlesApart(PUSH_ITER);
+    particles_to_grid();
+    density_update();
+    compute_grid_forces(GRID_ITER);
+    grid_to_particles();
+
+    LED_InitPeri();
+    LED_Show();
+    
+    Show();
+
+    TIM_TimeBaseInitTypeDef timBaseCfg = {0};
+    RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM2, ENABLE);
+    timBaseCfg.TIM_Prescaler = SystemCoreClock/1000000 - 1;
+    timBaseCfg.TIM_CounterMode = TIM_CounterMode_Up;
+    timBaseCfg.TIM_Period = 0xFFFF;
+    timBaseCfg.TIM_ClockDivision = TIM_CKD_DIV1;
+    timBaseCfg.TIM_RepetitionCounter = 0;
+    TIM_TimeBaseInit(TIM2, &timBaseCfg);
+    TIM_Cmd(TIM2,ENABLE);
+
+    uint32_t time = TIM2->CNT;
+    _iq accex = _IQ(0);
+    _iq accey = _IQ(9.8f);
+    for (int i=0;i<3;i++){
+        GetAcce(7000,&accex,&accey);
+        ParticleIntegrate(accex, accey);
+        PushParticlesApart(PUSH_ITER);
+        particles_to_grid();
+        density_update();
+        compute_grid_forces(GRID_ITER);
+        grid_to_particles();
+        Show();
+        while(timer ++ < 6)
+        {__WFI();}
+        timer = 0;
+    }
+    time = TIM2->CNT - time;
+    uint32_t fps = 3*1000000/time;
+    PRINT("fps: %d \r\n",fps);
+    TIM_Cmd(TIM2,DISABLE);
+
+
     while(1)
-    {
-        int16_t x,y,z;
-        LIS2DWHXY_Get(&x,&y,&z);
-        PRINT("x:%d,y:%d,z:%d.\r\n",x,y,z);
-        Delay_Ms(3000);
+    {   
+        NVIC_DisableIRQ(TIM1_CC_IRQn);
+        NVIC_DisableIRQ(TIM1_UP_IRQn);
+        GetAcce(7000,&accex,&accey);
+        ParticleIntegrate(accex, accey);
+        PushParticlesApart(PUSH_ITER);
+        particles_to_grid();
+        density_update();
+        compute_grid_forces(GRID_ITER);
+        grid_to_particles();
+        Show();
+        NVIC_EnableIRQ(TIM1_CC_IRQn);
+        NVIC_EnableIRQ(TIM1_UP_IRQn);
+        while(timer ++ < 6)
+        {__WFI();}
+        timer = 0;
+        if(GPIO_ReadInputDataBit(GPIOA,GPIO_Pin_0) == Bit_RESET){
+            Delay_Ms(30);
+            if(GPIO_ReadInputDataBit(GPIOA,GPIO_Pin_0) == Bit_RESET){
+                while(GPIO_ReadInputDataBit(GPIOA,GPIO_Pin_0) == Bit_RESET);
+                Delay_Ms(30);
+                shutdown();
+            }
+        }
+        //Delay_Us(500);
+
     }
 }
