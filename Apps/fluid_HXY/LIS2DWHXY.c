@@ -7,14 +7,14 @@
 #define ACK 1
 #define NOACK 0
 
-// #define SDA_LOW GPIOA->CFGLR&=~(0xF<<4*7);GPIOA->CFGLR|=(0x3<<4*7);I2CPort->BCR |= SDA_PIN
-// #define SDA_HIGH GPIOA->CFGLR&=~(0xF<<4*7);GPIOA->CFGLR|=(0x8<<4*7);I2CPort->BSHR |= SDA_PIN
-#define SDA_LOW I2CPort->BCR |= SDA_PIN
-#define SDA_HIGH I2CPort->BSHR |= SDA_PIN
+ #define SDA_LOW I2CPort->BCR |= SDA_PIN;GPIOA->CFGLR&=~(0xF<<4*7);GPIOA->CFGLR|=(0x3<<4*7);
+ #define SDA_HIGH I2CPort->BSHR |= SDA_PIN;GPIOA->CFGLR&=~(0xF<<4*7);GPIOA->CFGLR|=(0x8<<4*7);
+//#define SDA_LOW I2CPort->BCR |= SDA_PIN
+//#define SDA_HIGH I2CPort->BSHR |= SDA_PIN
 #define SCL_LOW (I2CPort->BCR |= SCL_PIN)
 #define SCL_HIGH (I2CPort->BSHR |= SCL_PIN)
 #define GET_SDA (I2CPort->INDR & SDA_PIN)
-#define I2C_DelayUS(x) Delay_Us(x)
+#define I2C_DelayUS(x) Delay_Us(1)
 
 static void I2CStart(void)
 {
@@ -32,11 +32,15 @@ static void I2CStart(void)
 
 static void I2CStop(void)
 {
+    I2C_DelayUS(5); 
+    SCL_LOW;
+    I2C_DelayUS(5); 
     SDA_LOW;
     I2C_DelayUS(5);    
     SCL_HIGH;
     I2C_DelayUS(5);
     SDA_HIGH;
+    I2C_DelayUS(5); 
 }
 
 static uint8_t I2CWrite(uint8_t dat)
@@ -96,6 +100,7 @@ static uint8_t I2CRead(uint8_t ack)
     SCL_HIGH;
     I2C_DelayUS(5);
     SCL_LOW;
+    I2C_DelayUS(5);
     SDA_HIGH;
     return dat;
 
@@ -132,23 +137,23 @@ static void LIS2_Read(uint8_t reg, uint16_t * buffer, uint8_t length)
 //初始化SPI1及对应引脚，包括CS脚
 void LIS2DWHXY_Init(void)
 {
+    RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA, ENABLE);
     GPIO_InitTypeDef GPIO_InitStructure = {0};
 
-    SCL_HIGH;
-    SDA_HIGH;
-
-    GPIO_InitStructure.GPIO_Pin   = GPIO_Pin_5;
-    GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_Out_OD; //从机无法接收的时候会强制拉低SCL
+    GPIOA->BSHR = GPIO_Pin_5|GPIO_Pin_4|GPIO_Pin_6|GPIO_Pin_7;
+    
+    GPIO_InitStructure.GPIO_Pin   = GPIO_Pin_5|GPIO_Pin_4|GPIO_Pin_6;
+    GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_Out_PP; //从机无法接收的时候会强制拉低SCL
     GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
     GPIO_Init(GPIOA, &GPIO_InitStructure); //PA5 SCK
 
-    GPIO_InitStructure.GPIO_Pin   = GPIO_Pin_7;
-    GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_Out_OD;
-    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
-    GPIO_Init(GPIOA, &GPIO_InitStructure); // PA7 MOSI
-
     SCL_HIGH;
     SDA_HIGH;
+    //GPIO_InitStructure.GPIO_Pin   = GPIO_Pin_7;
+    //GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_Out_OD;
+    //GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+    //GPIO_Init(GPIOA, &GPIO_InitStructure); // PA7 SDA
+
 
     uint16_t buf[10] = {0};
     LIS2_Read(0x0F,buf,1);//read whoami
