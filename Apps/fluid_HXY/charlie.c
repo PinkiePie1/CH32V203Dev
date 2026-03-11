@@ -32,7 +32,7 @@ static uint8_t LUT[] = {
 225,226,227,228,229,230,231,232,233,234,235,236,237,238,239,224
 };
 
-static uint16_t bright[PinCount] = {offTime};//records the number of led for each row to adjust brightness
+static uint16_t bright[PinCount] = {0};//records the number of led for each row to adjust Compensation
 
 static uint32_t gpioCFGL[16] =
 {0X00000003,0X00000030,0X00000300,0X00003000,
@@ -55,7 +55,7 @@ static void LED_RebuildDMABuffer(void)
     {
         dmaOutdrOn[i] = (uint32_t)1U << i;
         dmaOutdrOff[i] = 0xFFFFFFFF;
-        bright[i]=offTime;
+        bright[i]=Period-Compensation;
     }
 }
 
@@ -120,14 +120,14 @@ void LED_InitPeri(void)
 
     timBaseCfg.TIM_Prescaler = 20;
     timBaseCfg.TIM_CounterMode = TIM_CounterMode_Up;
-    timBaseCfg.TIM_Period = (onTime + offTime) - 1U;
+    timBaseCfg.TIM_Period = Period - 1U;
     timBaseCfg.TIM_ClockDivision = TIM_CKD_DIV1;
     timBaseCfg.TIM_RepetitionCounter = 0;
     TIM_TimeBaseInit(TIM1, &timBaseCfg);
 
     TIM_SetCompare1(TIM1,1);
     TIM_SetCompare2(TIM1,1);
-    TIM_SetCompare3(TIM1,offTime);
+    TIM_SetCompare3(TIM1,Period-Compensation);
     TIM_SetCompare4(TIM1,1);
 
 
@@ -180,7 +180,9 @@ void LED_SetPixel(uint16_t num, uint8_t color)
         count = comp & gpioCFGL[y]?count+1:count;
     }
     count -= 1;
-    bright[y] = offTime-count;
+    uint16_t pwm = Period-(count<<2);
+    pwm= pwm - (pwm>>Brightness);
+    bright[y] = pwm;
     //PRINT("birght:[%d] is : %d\r\n",y,bright[y]);
 }
 
