@@ -4,8 +4,9 @@
 #include "debug.h"
 
 /* Global typedef */
-#define onTime 15U
-#define offTime (300U-onTime)
+#define Period 300U
+#define Compensation 0 // this value compensates multiple row. if led is too bright when only few is lit in a row, reduce this number
+#define Brightness 5 //this controls how bright the led is. less value = brighter.
 /* Global define */
 
 #define LEDON 1
