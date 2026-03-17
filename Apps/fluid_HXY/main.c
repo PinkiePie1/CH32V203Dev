@@ -64,16 +64,15 @@ void shutdown(void){
     NVIC_SystemReset();
 }
 
-
 void GetAcce(uint32_t i, _iq * accex, _iq * accey)
 {
     int16_t x,y,z;
     LIS2DWHXY_Get(&x,&y,&z);
-    float xp = (float) y * -0.3f;
-    float yp = (float) x * 0.3f;
+    float xp = (float) ((y-x) * 0.19f);
+    float yp = (float) ((-x-y) * 0.19f);
 
-    *accex = _IQ(xp);
-    *accey = _IQ(yp);
+    *accex = _IQ(yp);
+    *accey = _IQ(xp);
 
 }
 
@@ -99,15 +98,12 @@ int main(void)
     NVIC_PriorityGroupConfig(NVIC_PriorityGroup_1);
     SystemCoreClockUpdate();
     Delay_Init();
-    GPIOallPU();
-    while(GPIO_ReadInputDataBit(GPIOA,GPIO_Pin_0) == Bit_RESET);
+    Delay_Ms(5);
     USART_Printf_Init(115200);
 
     PRINT("SystemClk:%d\r\n", SystemCoreClock);
     PRINT( "ChipID:%08x\r\n", DBGMCU_GetCHIPID() );
     PRINT("This is ACCE example\r\n");
-
-    LIS2DWHXY_Init();
 
     InitParticles();
     ParticleIntegrate(0, _IQ(9.8f));
@@ -117,10 +113,38 @@ int main(void)
     compute_grid_forces(GRID_ITER);
     grid_to_particles();
 
+    if(LIS2DWHXY_Init()==0){}
+    else{
+        LED_SetPixel(120,LEDON);
+        while(1);
+
+    }
+
     LED_InitPeri();
     LED_Show();
+
+// while(1)
+// {
+//     int16_t xval,yval;
+//     LIS2DWHXY_Get(&yval,&xval,NULL);
+//     xval = xval<0?-xval:xval;
+//     xval = xval>240?240:xval;
+//     for (uint16_t i = 0; i < xval; i++)
+//     {
+//         LED_SetPixel(i,LEDON);
+//         /* code */
+//     }
+//     Delay_Ms(20);
     
+//     for (uint16_t i = 0; i < 240; i++)
+//     {
+//         LED_SetPixel(i,LEDOFF);
+//         /* code */
+//     }
+// }
+
     Show();
+
 
     TIM_TimeBaseInitTypeDef timBaseCfg = {0};
     RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM2, ENABLE);
