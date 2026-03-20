@@ -28,12 +28,53 @@
 /* Global define */
 
 #define PUSH_ITER 1
-#define GRID_ITER 12
+#define GRID_ITER 8
+#define MOTION_THRESHOLD 6
+uint32_t sleepTimer = 0;
+int16_t prevx = 0;
+int16_t prevy = 0;
 uint8_t ticks=0;
 /* Global Variable */
 
 
 
+void InitGPIO(void){
+        GPIO_InitTypeDef gpioInit = {0};
+    RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA, ENABLE);
+
+    gpioInit.GPIO_Pin = GPIO_Pin_7;
+    gpioInit.GPIO_Mode = GPIO_Mode_AIN;
+    gpioInit.GPIO_Speed = GPIO_Speed_50MHz;
+    GPIO_Init(GPIOB, &gpioInit);
+
+}
+
+void EXTI0_INT_INIT(void)
+{
+    GPIO_InitTypeDef GPIO_InitStructure = {0};
+    EXTI_InitTypeDef EXTI_InitStructure = {0};
+    NVIC_InitTypeDef NVIC_InitStructure = {0};
+
+    RCC_APB2PeriphClockCmd(RCC_APB2Periph_AFIO | RCC_APB2Periph_GPIOA, ENABLE);
+
+    GPIO_InitStructure.GPIO_Pin = GPIO_Pin_7;
+    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IPD;
+    GPIO_Init(GPIOA, &GPIO_InitStructure);
+
+    /* GPIOA ----> EXTI_Line0 */
+    GPIO_EXTILineConfig(GPIO_PortSourceGPIOA, GPIO_Pin_7);
+    EXTI_InitStructure.EXTI_Line = EXTI_Line7;
+    EXTI_InitStructure.EXTI_Mode = EXTI_Mode_Interrupt;
+    EXTI_InitStructure.EXTI_Trigger = EXTI_Trigger_Rising;
+    EXTI_InitStructure.EXTI_LineCmd = ENABLE;
+    EXTI_Init(&EXTI_InitStructure);
+
+    NVIC_InitStructure.NVIC_IRQChannel = EXTI9_5_IRQn;
+    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 1;
+    NVIC_InitStructure.NVIC_IRQChannelSubPriority = 2;
+    NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
+    NVIC_Init(&NVIC_InitStructure);
+}
 
 void GPIOallPU(void){
 
@@ -59,15 +100,23 @@ void shutdown(void){
     GPIO_PinRemapConfig(GPIO_Remap_SWJ_Disable,ENABLE);
     LIS2DWHXY_Deinit();
     GPIOallPU();
+    EXTI0_INT_INIT();
     RCC_APB1PeriphClockCmd(RCC_APB1Periph_PWR,ENABLE);
     PWR_EnterSTOPMode(PWR_Regulator_LowPower,PWR_STOPEntry_WFI);
     NVIC_SystemReset();
+
+
+    
 }
 
 void GetAcce(uint32_t i, _iq * accex, _iq * accey)
 {
     int16_t x,y,z;
     LIS2DWHXY_Get(&x,&y,&z);
+    uint16_t diff = (x-prevx > 0 ? x - prevx: prevx - x);
+    if (diff > MOTION_THRESHOLD){sleepTimer = 0;}//feed
+    prevx = x;
+
     float xp = (float) ((y-x) * 0.19f);
     float yp = (float) ((-x-y) * 0.19f);
 
@@ -99,6 +148,8 @@ int main(void)
     SystemCoreClockUpdate();
     Delay_Init();
     Delay_Ms(5);
+
+    GPIOallPU();
     USART_Printf_Init(115200);
 
     PRINT("SystemClk:%d\r\n", SystemCoreClock);
@@ -113,6 +164,8 @@ int main(void)
     compute_grid_forces(GRID_ITER);
     grid_to_particles();
 
+
+
     if(LIS2DWHXY_Init()==0){}
     else{
         LED_SetPixel(120,LEDON);
@@ -123,29 +176,16 @@ int main(void)
     LED_InitPeri();
     LED_Show();
 
-// while(1)
-// {
-//     int16_t xval,yval;
-//     LIS2DWHXY_Get(&yval,&xval,NULL);
-//     xval = xval<0?-xval:xval;
-//     xval = xval>240?240:xval;
-//     for (uint16_t i = 0; i < xval; i++)
-//     {
-//         LED_SetPixel(i,LEDON);
-//         /* code */
-//     }
-//     Delay_Ms(20);
-    
-//     for (uint16_t i = 0; i < 240; i++)
-//     {
-//         LED_SetPixel(i,LEDOFF);
-//         /* code */
-//     }
-// }
+    for(uint32_t i = 0; i < 240; i++)
+    {
+        LED_SetPixel(i,LEDOFF);
+    }
 
     Show();
 
-
+    _iq accex = _IQ(0);
+    _iq accey = _IQ(9.8f);
+/*
     TIM_TimeBaseInitTypeDef timBaseCfg = {0};
     RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM2, ENABLE);
     timBaseCfg.TIM_Prescaler = SystemCoreClock/1000000 - 1;
@@ -157,8 +197,7 @@ int main(void)
     TIM_Cmd(TIM2,ENABLE);
 
     uint32_t time = TIM2->CNT;
-    _iq accex = _IQ(0);
-    _iq accey = _IQ(9.8f);
+
     for (int i=0;i<3;i++){
         GetAcce(7000,&accex,&accey);
         ParticleIntegrate(accex, accey);
@@ -169,14 +208,16 @@ int main(void)
         grid_to_particles();
         Show();
         while(timer ++ < 6)
-        {__WFI();}
+        {
+            //__WFI();
+        }
         timer = 0;
     }
     time = TIM2->CNT - time;
     uint32_t fps = 3*1000000/time;
     PRINT("fps: %d \r\n",fps);
     TIM_Cmd(TIM2,DISABLE);
-
+*/
 
     while(1)
     {   
@@ -193,17 +234,22 @@ int main(void)
         NVIC_EnableIRQ(TIM1_CC_IRQn);
         NVIC_EnableIRQ(TIM1_UP_IRQn);
         while(timer ++ < 2)
-        {__WFI();}
+        {
+            __WFI();
+        }
         timer = 0;
-        if(GPIO_ReadInputDataBit(GPIOA,GPIO_Pin_0) == Bit_RESET){
-            Delay_Ms(30);
-            if(GPIO_ReadInputDataBit(GPIOA,GPIO_Pin_0) == Bit_RESET){
-                while(GPIO_ReadInputDataBit(GPIOA,GPIO_Pin_0) == Bit_RESET);
-                Delay_Ms(30);
+        if(sleepTimer++>5*100){
                 shutdown();
             }
-        }
-        //Delay_Us(500);
 
     }
+}
+
+void EXTI9_5_IRQHandler (void) __attribute__((interrupt("WCH-Interrupt-fast")));
+void EXTI9_5_IRQHandler (void)
+{
+  if(EXTI_GetITStatus(EXTI_Line7)!=RESET)
+  {
+    EXTI_ClearITPendingBit(EXTI_Line7);     /* Clear Flag */
+  }
 }
