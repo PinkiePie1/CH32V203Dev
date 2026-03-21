@@ -1,23 +1,3 @@
-/********************************** (C) COPYRIGHT *******************************
- * File Name          : main.c
- * Author             : WCH
- * Version            : V1.0.0
- * Date               : 2021/06/06
- * Description        : Main program body.
- *********************************************************************************
- * Copyright (c) 2021 Nanjing Qinheng Microelectronics Co., Ltd.
- * Attention: This software (modified or not) and binary are used for 
- * microcontroller manufactured by Nanjing Qinheng Microelectronics.
- *******************************************************************************/
-
-/*
- *@Note
- *USART Print debugging routine:
- *USART1_Tx(PA9).
- *This example demonstrates using USART1(PA9) as a print debug port output.
- *
- */
-
 #include "debug.h"
 #include "SandSim.h"
 #include "LIS2DWHXY.h"
@@ -29,25 +9,10 @@
 
 #define PUSH_ITER 1
 #define GRID_ITER 8
-#define MOTION_THRESHOLD 5
-uint32_t sleepTimer = 0;
-int16_t prevx = 0;
-int16_t prevy = 0;
-uint8_t ticks=0;
+
 /* Global Variable */
 
-
-
-void InitGPIO(void){
-        GPIO_InitTypeDef gpioInit = {0};
-    RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA, ENABLE);
-
-    gpioInit.GPIO_Pin = GPIO_Pin_7;
-    gpioInit.GPIO_Mode = GPIO_Mode_IN_FLOATING;
-    gpioInit.GPIO_Speed = GPIO_Speed_50MHz;
-    GPIO_Init(GPIOB, &gpioInit);
-
-}
+uint32_t sleepTimer = 0;
 
 void EXTI0_INT_INIT(void)
 {
@@ -61,7 +26,7 @@ void EXTI0_INT_INIT(void)
     GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IN_FLOATING;
     GPIO_Init(GPIOA, &GPIO_InitStructure);
 
-    /* GPIOA ----> EXTI_Line0 */
+    /* GPIOA7 ----> EXTI_Line7 */
     GPIO_EXTILineConfig(GPIO_PortSourceGPIOA, GPIO_Pin_7);
     EXTI_InitStructure.EXTI_Line = EXTI_Line7;
     EXTI_InitStructure.EXTI_Mode = EXTI_Mode_Interrupt;
@@ -74,6 +39,7 @@ void EXTI0_INT_INIT(void)
     NVIC_InitStructure.NVIC_IRQChannelSubPriority = 2;
     NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
     NVIC_Init(&NVIC_InitStructure);
+
 }
 
 void GPIOallPU(void){
@@ -96,8 +62,8 @@ void GPIOallPU(void){
 
 }
 
-void shutdown(void){
-
+void shutdown(void)
+{
     GPIO_PinRemapConfig(GPIO_Remap_SWJ_Disable,ENABLE);
     LIS2DWHXY_Deinit();
     GPIOallPU();
@@ -108,7 +74,7 @@ void shutdown(void){
     
 }
 
-void GetAcce(uint32_t i, _iq * accex, _iq * accey)
+void GetAcce(_iq * accex, _iq * accey)
 {
     int16_t x,y,z;
     LIS2DWHXY_Get(&x,&y,&z);
@@ -123,10 +89,9 @@ void GetAcce(uint32_t i, _iq * accex, _iq * accey)
 
 
 void Show(void)
-{
-    
+{    
     screen_update();
-    
+   
 }
 
 
@@ -147,16 +112,13 @@ int main(void)
     USART_Printf_Init(115200);
     EXTI0_INT_INIT();
 
-    PRINT("SystemClk:%d\r\n", SystemCoreClock);
-    PRINT( "ChipID:%08x\r\n", DBGMCU_GetCHIPID() );
-    PRINT("This is ACCE example\r\n");
+    PRINT("This is FLIP\r\n");
 
     InitParticles();
     LED_InitPeri();
     LED_Show();
 
-    if(LIS2DWHXY_Init()==0){}
-    else{
+    if(LIS2DWHXY_Init()!=0){
         LED_SetPixel(120,LEDON);
         while(1);
     }
@@ -171,6 +133,8 @@ int main(void)
 
     _iq accex = _IQ(0);
     _iq accey = _IQ(9.8f);
+
+    //for FPS testing.
 /*
     TIM_TimeBaseInitTypeDef timBaseCfg = {0};
     RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM2, ENABLE);
@@ -209,7 +173,8 @@ int main(void)
     {   
         NVIC_DisableIRQ(TIM1_CC_IRQn);
         NVIC_DisableIRQ(TIM1_UP_IRQn);
-        GetAcce(7000,&accex,&accey);
+
+        GetAcce(&accex,&accey);
         ParticleIntegrate(accex, accey);
         PushParticlesApart(PUSH_ITER);
         particles_to_grid();
@@ -217,9 +182,10 @@ int main(void)
         compute_grid_forces(GRID_ITER);
         grid_to_particles();
         Show();
+
         NVIC_EnableIRQ(TIM1_CC_IRQn);
         NVIC_EnableIRQ(TIM1_UP_IRQn);
-        while(timer ++ < 2)
+        while(timer ++ < 15)
         {
             __WFI();
         }
