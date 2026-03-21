@@ -78,20 +78,21 @@ void EXTI0_INT_INIT(void)
 
 void GPIOallPU(void){
 
-RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOB | RCC_APB2Periph_GPIOA | RCC_APB2Periph_GPIOC| RCC_APB2Periph_GPIOD |RCC_APB2Periph_AFIO, ENABLE);
-GPIOA->OUTDR = 0xFFFFFFFF;
-GPIOB->OUTDR = 0xFFFFFFFF;
-GPIOC->OUTDR = 0xFFFFFFFF;
-GPIOD->OUTDR = 0xFFFFFFFF;
+    RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOB | RCC_APB2Periph_GPIOA | 
+        RCC_APB2Periph_GPIOC| RCC_APB2Periph_GPIOD |RCC_APB2Periph_AFIO, ENABLE);
+    GPIOA->OUTDR = 0xFFFFFFFF;
+    GPIOB->OUTDR = 0xFFFFFFFF;
+    GPIOC->OUTDR = 0xFFFFFFFF;
+    GPIOD->OUTDR = 0xFFFFFFFF;
 
-GPIOA->CFGLR=0x88888888;
-GPIOA->CFGHR=0x88888888;
-GPIOB->CFGLR=0x88888888;
-GPIOB->CFGHR=0x88888888;
-GPIOC->CFGLR=0x88888888;
-GPIOC->CFGHR=0x88888888;
-GPIOD->CFGLR=0x88888888;
-GPIOD->CFGHR=0x88888888;
+    GPIOA->CFGLR=0x88888888;
+    GPIOA->CFGHR=0x88888888;
+    GPIOB->CFGLR=0x88888888;
+    GPIOB->CFGHR=0x88888888;
+    GPIOC->CFGLR=0x88888888;
+    GPIOC->CFGHR=0x88888888;
+    GPIOD->CFGLR=0x88888888;
+    GPIOD->CFGHR=0x88888888;
 
 }
 
@@ -104,8 +105,6 @@ void shutdown(void){
     RCC_APB1PeriphClockCmd(RCC_APB1Periph_PWR,ENABLE);
     PWR_EnterSTOPMode(PWR_Regulator_LowPower,PWR_STOPEntry_WFI);
     NVIC_SystemReset();
-
-
     
 }
 
@@ -119,15 +118,6 @@ void GetAcce(uint32_t i, _iq * accex, _iq * accey)
 
     *accex = _IQ(yp);
     *accey = _IQ(xp);
-
-
-    uint16_t diffx = (x > prevx ? x-prevx : prevx-x);
-    if (diffx > MOTION_THRESHOLD){sleepTimer = 0;}//feed
-    prevx = x;
-
-    uint16_t diffy = (y > prevy ? y-prevy : prevy-y);
-    if (diffy > MOTION_THRESHOLD){sleepTimer = 0;}//feed
-    prevy = y;
 
 }
 
