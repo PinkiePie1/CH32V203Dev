@@ -1,37 +1,5 @@
 #include "charlie.h"
-/*
-static uint8_t LUT[] = {
-15,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,
 
-30,31,16,17,18,19,20,21,22,23,24,25,26,27,28,29,
-
-45,46,47,32,33,34,35,36,37,38,39,40,41,42,43,44,
-
-60,61,62,63,48,49,50,51,52,53,54,55,56,57,58,59,
-
-75,76,77,78,79,64,65,66,67,68,69,70,71,72,73,74,
-
-90,91,92,93,94,95,80,81,82,83,84,85,86,87,88,89,
-
-105,106,107,108,109,110,111,96,97,98,99,100,101,102,103,104,
-
-120,121,122,123,124,125,126,127,112,113,114,115,116,117,118,119,
-
-135,136,137,138,139,140,141,142,143,128,129,130,131,132,133,134,
-
-150,151,152,153,154,155,156,157,158,159,144,145,146,147,148,149,
-
-165,166,167,168,169,170,171,172,173,174,175,160,161,162,163,164,
-
-180,181,182,183,184,185,186,187,188,189,190,191,176,177,178,179,
-
-195,196,197,198,199,200,201,202,203,204,205,206,207,192,193,194,
-
-210,211,212,213,214,215,216,217,218,219,220,221,222,223,208,209,
-
-225,226,227,228,229,230,231,232,233,234,235,236,237,238,239,224
-};
-*/
 static uint16_t LUT[240] = {
     101,  26, 181,  61,  18,  33,  62, 167, 
      40, 160, 175,   9, 150, 210,  13, 219, 
@@ -129,6 +97,7 @@ static void LED_InitDMAChannelHalfWord(DMA_Channel_TypeDef *ch, uint32_t periph,
     dmaCfg.DMA_Priority = DMA_Priority_High;
     dmaCfg.DMA_M2M = DMA_M2M_Disable;
     DMA_Init(ch, &dmaCfg);
+
 }
 
 // 初始化DMA、定时器和GPIO外设
@@ -152,7 +121,7 @@ void LED_InitPeri(void)
     LED_InitDMAChannel(DMA1_Channel5, (uint32_t)&GPIOB->BSHR, (uint32_t)dmaOutdrOff);
     LED_InitDMAChannelHalfWord(DMA1_Channel4, (uint32_t)&TIM1->CH3CVR, (uint32_t)bright);
 
-    timBaseCfg.TIM_Prescaler = 10;
+    timBaseCfg.TIM_Prescaler = 20;
     timBaseCfg.TIM_CounterMode = TIM_CounterMode_Up;
     timBaseCfg.TIM_Period = Period - 1U;
     timBaseCfg.TIM_ClockDivision = TIM_CKD_DIV1;
@@ -163,7 +132,6 @@ void LED_InitPeri(void)
     TIM_SetCompare2(TIM1,1);
     TIM_SetCompare3(TIM1,Period-Compensation);
     TIM_SetCompare4(TIM1,1);
-
 
     TIM_DMACmd(TIM1, TIM_DMA_Update | TIM_DMA_CC1 | TIM_DMA_CC2 | TIM_DMA_CC3 |TIM_DMA_CC4, ENABLE);
     // update-> channel 5
@@ -176,9 +144,9 @@ void LED_InitPeri(void)
     TIM_ITConfig(TIM1,TIM_IT_CC1 | TIM_IT_CC3 | TIM_IT_Update,ENABLE);
 	NVIC_EnableIRQ(TIM1_CC_IRQn);
     NVIC_EnableIRQ(TIM1_UP_IRQn);
+
 }
 
-// 点亮或熄灭某个LED
 void LED_SetPixel(uint16_t num, uint8_t color)
 {
     num = LUT[num];
@@ -217,7 +185,6 @@ void LED_SetPixel(uint16_t num, uint8_t color)
     uint16_t pwm = Period-(count);
     pwm= pwm - (pwm>>Brightness);
     bright[y] = pwm;
-    //PRINT("birght:[%d] is : %d\r\n",y,bright[y]);
 }
 
 // 开启显示，启动timer触发DMA自动刷新GPIO寄存器
