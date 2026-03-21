@@ -141,7 +141,8 @@ uint8_t LIS2DWHXY_INTERRUT(void)
     
     LIS2_Write(0x22,0x40);//AOI1 on INT1.
     LIS2_Write(0x30,0x0A);//x and y high enable
-    LIS2_Write(0x32,0x18);//threshold is around 1g
+    LIS2_Write(0x21,0xA1);//enable high pass
+    LIS2_Write(0x32,0x04);//threshold is small
     return flag;
 }
 
@@ -173,16 +174,14 @@ uint8_t LIS2DWHXY_Init(void)
     if (  buf[0] == 0x11 )
     {
         PRINT("Found LIS2DH!\r\n");
-        LIS2_Write(0x20,0x67);//200Hz ODR,normal mode, xyz all enable
-        LIS2_Read(0x20,buf,1);
-        if(buf[0]!=0x67){flag = 1;}
+        LIS2_Write(0x20,0x97);
         LIS2_Write(0x21,0x00);//disable filter
         LIS2_Write(0x22,0x00);//disable interrupt
         LIS2_Write(0x23,0x30);//16G FS
         LIS2_Read(0x23,buf,1);
-        if(buf[0]!=0x30){flag = 1;}
-        LIS2DWHXY_INTERRUT(); //init interrupt
-        
+        LIS2_Write(0x20,0x67);
+
+        LIS2DWHXY_INTERRUT(); //init interrupt for motion detection.
     }
     else
     {
@@ -198,6 +197,7 @@ void LIS2DWHXY_Deinit(void)
 {
     //LIS2_Write(0x24,0x80);//reboot memory content
     LIS2_Write(0x20,0x27);//LIS2DH at 10HzODR.
+    
 
 }
 
@@ -228,6 +228,7 @@ SL_ACCEL_Z = SL_ACCEL_Z>>6;
 
 SL_ACCEL_X-=83;
 SL_ACCEL_Y-=83;
+SL_ACCEL_Z-=83;
 
 *x=SL_ACCEL_X;
 *y=SL_ACCEL_Y;

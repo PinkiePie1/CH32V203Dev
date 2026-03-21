@@ -29,7 +29,7 @@
 
 #define PUSH_ITER 1
 #define GRID_ITER 8
-#define MOTION_THRESHOLD 6
+#define MOTION_THRESHOLD 5
 uint32_t sleepTimer = 0;
 int16_t prevx = 0;
 int16_t prevy = 0;
@@ -43,7 +43,7 @@ void InitGPIO(void){
     RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA, ENABLE);
 
     gpioInit.GPIO_Pin = GPIO_Pin_7;
-    gpioInit.GPIO_Mode = GPIO_Mode_AIN;
+    gpioInit.GPIO_Mode = GPIO_Mode_IN_FLOATING;
     gpioInit.GPIO_Speed = GPIO_Speed_50MHz;
     GPIO_Init(GPIOB, &gpioInit);
 
@@ -58,7 +58,7 @@ void EXTI0_INT_INIT(void)
     RCC_APB2PeriphClockCmd(RCC_APB2Periph_AFIO | RCC_APB2Periph_GPIOA, ENABLE);
 
     GPIO_InitStructure.GPIO_Pin = GPIO_Pin_7;
-    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IPD;
+    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IN_FLOATING;
     GPIO_Init(GPIOA, &GPIO_InitStructure);
 
     /* GPIOA ----> EXTI_Line0 */
@@ -113,15 +113,21 @@ void GetAcce(uint32_t i, _iq * accex, _iq * accey)
 {
     int16_t x,y,z;
     LIS2DWHXY_Get(&x,&y,&z);
-    uint16_t diff = (x-prevx > 0 ? x - prevx: prevx - x);
-    if (diff > MOTION_THRESHOLD){sleepTimer = 0;}//feed
-    prevx = x;
 
     float xp = (float) ((y-x) * 0.19f);
     float yp = (float) ((-x-y) * 0.19f);
 
     *accex = _IQ(yp);
     *accey = _IQ(xp);
+
+
+    uint16_t diffx = (x > prevx ? x-prevx : prevx-x);
+    if (diffx > MOTION_THRESHOLD){sleepTimer = 0;}//feed
+    prevx = x;
+
+    uint16_t diffy = (y > prevy ? y-prevy : prevy-y);
+    if (diffy > MOTION_THRESHOLD){sleepTimer = 0;}//feed
+    prevy = y;
 
 }
 
@@ -147,34 +153,24 @@ int main(void)
     NVIC_PriorityGroupConfig(NVIC_PriorityGroup_1);
     SystemCoreClockUpdate();
     Delay_Init();
-    Delay_Ms(5);
-
     GPIOallPU();
     USART_Printf_Init(115200);
+    EXTI0_INT_INIT();
 
     PRINT("SystemClk:%d\r\n", SystemCoreClock);
     PRINT( "ChipID:%08x\r\n", DBGMCU_GetCHIPID() );
     PRINT("This is ACCE example\r\n");
 
     InitParticles();
-    ParticleIntegrate(0, _IQ(9.8f));
-    PushParticlesApart(PUSH_ITER);
-    particles_to_grid();
-    density_update();
-    compute_grid_forces(GRID_ITER);
-    grid_to_particles();
-
-
+    LED_InitPeri();
+    LED_Show();
 
     if(LIS2DWHXY_Init()==0){}
     else{
         LED_SetPixel(120,LEDON);
         while(1);
-
     }
 
-    LED_InitPeri();
-    LED_Show();
 
     for(uint32_t i = 0; i < 240; i++)
     {
@@ -239,6 +235,11 @@ int main(void)
         }
         timer = 0;
         if(sleepTimer++>5*100){
+                DMA_Cmd(DMA1_Channel5, DISABLE);
+                DMA_Cmd(DMA1_Channel2, DISABLE);
+                DMA_Cmd(DMA1_Channel4, DISABLE);
+                DMA_Cmd(DMA1_Channel3, DISABLE);
+                DMA_Cmd(DMA1_Channel6, DISABLE);
                 shutdown();
             }
 
@@ -250,6 +251,7 @@ void EXTI9_5_IRQHandler (void)
 {
   if(EXTI_GetITStatus(EXTI_Line7)!=RESET)
   {
+    sleepTimer = 0;//reset timer.
     EXTI_ClearITPendingBit(EXTI_Line7);     /* Clear Flag */
   }
 }
