@@ -142,7 +142,7 @@ uint8_t LIS2DWHXY_INTERRUT(void)
     LIS2_Write(0x22,0x40);//AOI1 on INT1.
     LIS2_Write(0x30,0x0A);//x and y high enable
     LIS2_Write(0x21,0xA1);//enable high pass
-    LIS2_Write(0x32,0x04);//threshold is small
+    LIS2_Write(0x32,0x01);//threshold is small
     return flag;
 }
 
@@ -178,9 +178,7 @@ uint8_t LIS2DWHXY_Init(void)
         LIS2_Write(0x21,0x00);//disable filter
         LIS2_Write(0x22,0x00);//disable interrupt
         LIS2_Write(0x23,0x30);//16G FS
-        LIS2_Read(0x23,buf,1);
         LIS2_Write(0x20,0x67);
-
         LIS2DWHXY_INTERRUT(); //init interrupt for motion detection.
     }
     else
@@ -195,8 +193,8 @@ uint8_t LIS2DWHXY_Init(void)
 
 void LIS2DWHXY_Deinit(void)
 {
-    //LIS2_Write(0x24,0x80);//reboot memory content
     LIS2_Write(0x20,0x27);//LIS2DH at 10HzODR.
+    LIS2_Write(0x32,0x05);//relatively large thershould.
     
 
 }
@@ -205,32 +203,29 @@ void LIS2DWHXY_Get(int16_t * x, int16_t * y, int16_t * z)
 {
     uint8_t buf[10] = {0};
     LIS2_Read(0x28,buf,6);
-    //LIS2_Read(0x29,buf+1,1);
-    //LIS2_Read(0x2A,buf+2,1);
-    //LIS2_Read(0x2B,buf+3,1);
-    //LIS2_Read(0x2C,buf+4,1);
-    //LIS2_Read(0x2D,buf+5,1);
 
-uint8_t X_H,X_L,Y_H,Y_L,Z_H, Z_L; // Three-axis data (high and low)
-X_H=buf[1];
-X_L=buf[0];
-Y_H=buf[3];
-Y_L=buf[2];
-Z_H=buf[5];
-Z_L=buf[4];
-int16_t SL_ACCEL_X,SL_ACCEL_Y,SL_ACCEL_Z ; // Three-axis data
-SL_ACCEL_X = (int16_t)((X_H<< 8) | X_L); // Merging data
-SL_ACCEL_Y = (int16_t)((Y_H<< 8) | Y_L); // Forcing data type conversion
-SL_ACCEL_Z = (int16_t)((Z_H<< 8) | Z_L); // 16 bit signed integer data
-SL_ACCEL_X = SL_ACCEL_X>>6;
-SL_ACCEL_Y = SL_ACCEL_Y>>6;
-SL_ACCEL_Z = SL_ACCEL_Z>>6;
+    uint8_t X_H,X_L,Y_H,Y_L,Z_H, Z_L; // Three-axis data (high and low)
+    X_H=buf[1];
+    X_L=buf[0];
+    Y_H=buf[3];
+    Y_L=buf[2];
+    Z_H=buf[5];
+    Z_L=buf[4];
+    int16_t SL_ACCEL_X,SL_ACCEL_Y,SL_ACCEL_Z ; // Three-axis data
+    SL_ACCEL_X = (int16_t)((X_H<< 8) | X_L); // Merging data
+    SL_ACCEL_Y = (int16_t)((Y_H<< 8) | Y_L); // Forcing data type conversion
+    SL_ACCEL_Z = (int16_t)((Z_H<< 8) | Z_L); // 16 bit signed integer data
+    SL_ACCEL_X = SL_ACCEL_X>>6;
+    SL_ACCEL_Y = SL_ACCEL_Y>>6;
+    SL_ACCEL_Z = SL_ACCEL_Z>>6;
 
-SL_ACCEL_X-=83;
-SL_ACCEL_Y-=83;
-SL_ACCEL_Z-=83;
+    //??? why
+    SL_ACCEL_X-=89;
+    SL_ACCEL_Y-=89;
+    SL_ACCEL_Z-=89;
 
-*x=SL_ACCEL_X;
-*y=SL_ACCEL_Y;
-*z=SL_ACCEL_Z;
+    *x=SL_ACCEL_X;
+    *y=SL_ACCEL_Y;
+    *z=SL_ACCEL_Z;
+    
 }
