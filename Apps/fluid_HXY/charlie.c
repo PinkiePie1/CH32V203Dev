@@ -152,7 +152,7 @@ void LED_InitPeri(void)
     LED_InitDMAChannel(DMA1_Channel5, (uint32_t)&GPIOB->BSHR, (uint32_t)dmaOutdrOff);
     LED_InitDMAChannelHalfWord(DMA1_Channel4, (uint32_t)&TIM1->CH3CVR, (uint32_t)bright);
 
-    timBaseCfg.TIM_Prescaler = 20;
+    timBaseCfg.TIM_Prescaler = 10;
     timBaseCfg.TIM_CounterMode = TIM_CounterMode_Up;
     timBaseCfg.TIM_Period = Period - 1U;
     timBaseCfg.TIM_ClockDivision = TIM_CKD_DIV1;
@@ -214,7 +214,7 @@ void LED_SetPixel(uint16_t num, uint8_t color)
         count = comp & gpioCFGL[y]?count+1:count;
     }
     count -= 1;
-    uint16_t pwm = Period-(count<<2);
+    uint16_t pwm = Period-(count);
     pwm= pwm - (pwm>>Brightness);
     bright[y] = pwm;
     //PRINT("birght:[%d] is : %d\r\n",y,bright[y]);
