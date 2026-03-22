@@ -201,6 +201,16 @@ void LED_Show(void)
 
 }
 
+void LED_TurnOff(void)
+{
+    TIM_Cmd(TIM1, DISABLE);
+    GPIOB->BCR=0xFFFFFFFF;
+    GPIOB->CFGLR = 0;
+    GPIOB->CFGHR = 0;
+
+}
+
+
 void TIM1_CC_IRQHandler(void) __attribute__((interrupt("WCH-Interrupt-fast")));
 void TIM1_UP_IRQHandler(void) __attribute__((interrupt("WCH-Interrupt-fast")));
 

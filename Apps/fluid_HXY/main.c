@@ -191,11 +191,7 @@ int main(void)
         }
         timer = 0;
         if(sleepTimer++>5*100){
-                DMA_Cmd(DMA1_Channel5, DISABLE);
-                DMA_Cmd(DMA1_Channel2, DISABLE);
-                DMA_Cmd(DMA1_Channel4, DISABLE);
-                DMA_Cmd(DMA1_Channel3, DISABLE);
-                DMA_Cmd(DMA1_Channel6, DISABLE);
+                LED_TurnOff();
                 shutdown();
             }
 
