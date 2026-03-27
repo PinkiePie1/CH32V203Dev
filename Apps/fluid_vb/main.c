@@ -79,8 +79,8 @@ void GetAcce(_iq * accex, _iq * accey)
     int16_t x,y,z;
     LIS2DWHXY_Get(&x,&y,&z);
 
-    float xp = (float) ((y-x) * 0.19f);
-    float yp = (float) ((-x-y) * 0.19f);
+    float xp = (float) (-y * 0.35f);
+    float yp = (float) (x * 0.35f);
 
     *accex = _IQ(yp);
     *accey = _IQ(xp);
