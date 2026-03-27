@@ -1,4 +1,4 @@
-#include "LIS2DWHXY.h"
+#include "LIS2DH.h"
 
 #define I2CPort GPIOA
 #define SDA_PIN GPIO_Pin_3
