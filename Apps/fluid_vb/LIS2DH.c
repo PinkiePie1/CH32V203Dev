@@ -14,7 +14,7 @@
 #define SCL_LOW (I2CPort->BCR |= SCL_PIN)
 #define SCL_HIGH (I2CPort->BSHR |= SCL_PIN)
 #define GET_SDA (I2CPort->INDR & SDA_PIN)
-#define I2C_DelayUS(x) Delay_Us(2)
+#define I2C_DelayUS(x)
 
 static void I2CStart(void)
 {
@@ -139,10 +139,10 @@ uint8_t LIS2DWHXY_INTERRUT(void)
 {
     uint8_t flag = 0;
     
-    LIS2_Write(0x22,0x40);//AOI1 on INT1.
+    LIS2_Write(0x22,0x40);//IA1 on INT1.
     LIS2_Write(0x30,0x0A);//x and y high enable
-    LIS2_Write(0x21,0xA1);//enable high pass
-    LIS2_Write(0x32,0x01);//threshold is small
+    LIS2_Write(0x21,0x31);//enable high pass
+    LIS2_Write(0x32,0x02);//threshold is small
     return flag;
 }
 
@@ -171,7 +171,7 @@ uint8_t LIS2DWHXY_Init(void)
     uint8_t buf[10] = {0};
     LIS2_Read(0x0F,buf,1);//read whoami
 
-    if (  buf[0] == 0x11 )
+    if (  buf[0] == 0x33 )
     {
         PRINT("Found LIS2DH!\r\n");
         LIS2_Write(0x20,0x97);
@@ -218,11 +218,6 @@ void LIS2DWHXY_Get(int16_t * x, int16_t * y, int16_t * z)
     SL_ACCEL_X = SL_ACCEL_X>>6;
     SL_ACCEL_Y = SL_ACCEL_Y>>6;
     SL_ACCEL_Z = SL_ACCEL_Z>>6;
-
-    //??? why
-    SL_ACCEL_X-=89;
-    SL_ACCEL_Y-=89;
-    SL_ACCEL_Z-=89;
 
     *x=SL_ACCEL_X;
     *y=SL_ACCEL_Y;
