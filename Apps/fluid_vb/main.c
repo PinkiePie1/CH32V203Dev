@@ -1,6 +1,6 @@
 #include "debug.h"
 #include "SandSim.h"
-#include "LIS2DWHXY.h"
+#include "LIS2DH.h"
 #include "charlie.h"
 
 /* Global typedef */
