@@ -65,7 +65,7 @@ void GPIOallPU(void){
 void shutdown(void)
 {
     GPIO_PinRemapConfig(GPIO_Remap_SWJ_Disable,ENABLE);
-    LIS2DWHXY_Deinit();
+    LIS2DH_Deinit();
     GPIOallPU();
     EXTI0_INT_INIT();
     RCC_APB1PeriphClockCmd(RCC_APB1Periph_PWR,ENABLE);
@@ -77,7 +77,7 @@ void shutdown(void)
 void GetAcce(_iq * accex, _iq * accey)
 {
     int16_t x,y,z;
-    LIS2DWHXY_Get(&x,&y,&z);
+    LIS2DH_Get(&x,&y,&z);
 
     float xp = (float) (-y * 0.35f);
     float yp = (float) (x * 0.35f);
@@ -118,56 +118,17 @@ int main(void)
     LED_InitPeri();
     LED_Show();
 
-    if(LIS2DWHXY_Init()!=0){
+try:
+    if(LIS2DH_Init()!=0){
         LED_SetPixel(120,LEDON);
-        while(1);
-    }
-
-
-    for(uint32_t i = 0; i < 240; i++)
-    {
-        LED_SetPixel(i,LEDOFF);
+        Delay_Ms(1000);
+        goto try;
     }
 
     Show();
 
     _iq accex = _IQ(0);
     _iq accey = _IQ(9.8f);
-
-    //for FPS testing.
-/*
-    TIM_TimeBaseInitTypeDef timBaseCfg = {0};
-    RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM2, ENABLE);
-    timBaseCfg.TIM_Prescaler = SystemCoreClock/1000000 - 1;
-    timBaseCfg.TIM_CounterMode = TIM_CounterMode_Up;
-    timBaseCfg.TIM_Period = 0xFFFF;
-    timBaseCfg.TIM_ClockDivision = TIM_CKD_DIV1;
-    timBaseCfg.TIM_RepetitionCounter = 0;
-    TIM_TimeBaseInit(TIM2, &timBaseCfg);
-    TIM_Cmd(TIM2,ENABLE);
-
-    uint32_t time = TIM2->CNT;
-
-    for (int i=0;i<3;i++){
-        GetAcce(7000,&accex,&accey);
-        ParticleIntegrate(accex, accey);
-        PushParticlesApart(PUSH_ITER);
-        particles_to_grid();
-        density_update();
-        compute_grid_forces(GRID_ITER);
-        grid_to_particles();
-        Show();
-        while(timer ++ < 6)
-        {
-            //__WFI();
-        }
-        timer = 0;
-    }
-    time = TIM2->CNT - time;
-    uint32_t fps = 3*1000000/time;
-    PRINT("fps: %d \r\n",fps);
-    TIM_Cmd(TIM2,DISABLE);
-*/
 
     while(1)
     {   
@@ -185,15 +146,16 @@ int main(void)
 
         NVIC_EnableIRQ(TIM1_CC_IRQn);
         NVIC_EnableIRQ(TIM1_UP_IRQn);
-        while(timer ++ < 15)
+        while(timer ++ < 3)
         {
-            __WFI();
+           __WFI();
         }
         timer = 0;
-        if(sleepTimer++>5*100){
-                LED_TurnOff();
-                shutdown();
-            }
+        if(sleepTimer++>5*100)
+        {
+            LED_TurnOff();
+            shutdown();
+        }
 
     }
 }

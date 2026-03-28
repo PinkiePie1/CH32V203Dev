@@ -14,7 +14,7 @@
 #define SCL_LOW (I2CPort->BCR |= SCL_PIN)
 #define SCL_HIGH (I2CPort->BSHR |= SCL_PIN)
 #define GET_SDA (I2CPort->INDR & SDA_PIN)
-#define I2C_DelayUS(x)
+#define I2C_DelayUS(x) Delay_Us(2)
 
 static void I2CStart(void)
 {
@@ -135,7 +135,7 @@ static void LIS2_Read(uint8_t reg, uint8_t * buffer, uint8_t length)
     
 }
 
-uint8_t LIS2DWHXY_INTERRUT(void)
+uint8_t LIS2DH_INTERRUT(void)
 {
     uint8_t flag = 0;
     
@@ -147,7 +147,7 @@ uint8_t LIS2DWHXY_INTERRUT(void)
 }
 
 //初始化SPI1及对应引脚，包括CS脚
-uint8_t LIS2DWHXY_Init(void)
+uint8_t LIS2DH_Init(void)
 {
     uint8_t flag = 0;
     RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA, ENABLE);
@@ -174,12 +174,11 @@ uint8_t LIS2DWHXY_Init(void)
     if (  buf[0] == 0x33 )
     {
         PRINT("Found LIS2DH!\r\n");
-        LIS2_Write(0x20,0x97);
         LIS2_Write(0x21,0x00);//disable filter
         LIS2_Write(0x22,0x00);//disable interrupt
         LIS2_Write(0x23,0x30);//16G FS
         LIS2_Write(0x20,0x67);
-        LIS2DWHXY_INTERRUT(); //init interrupt for motion detection.
+        LIS2DH_INTERRUT(); //init interrupt for motion detection.
     }
     else
     {
@@ -191,7 +190,7 @@ uint8_t LIS2DWHXY_Init(void)
 
 }
 
-void LIS2DWHXY_Deinit(void)
+void LIS2DH_Deinit(void)
 {
     LIS2_Write(0x20,0x27);//LIS2DH at 10HzODR.
     LIS2_Write(0x32,0x05);//relatively large thershould.
@@ -199,7 +198,7 @@ void LIS2DWHXY_Deinit(void)
 
 }
 
-void LIS2DWHXY_Get(int16_t * x, int16_t * y, int16_t * z)
+void LIS2DH_Get(int16_t * x, int16_t * y, int16_t * z)
 {
     uint8_t buf[10] = {0};
     LIS2_Read(0x28,buf,6);
