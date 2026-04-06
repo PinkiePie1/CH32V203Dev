@@ -120,7 +120,10 @@ int main(void)
 
 try:
     if(LIS2DH_Init()!=0){
-        LED_SetPixel(120,LEDON);
+        for (uint16_t i = 0; i < 240; i++)
+        {
+            LED_SetPixel(i,LEDON);
+        }
         Delay_Ms(1000);
         goto try;
     }
@@ -158,6 +161,7 @@ try:
         }
 
     }
+
 }
 
 void EXTI9_5_IRQHandler (void) __attribute__((interrupt("WCH-Interrupt-fast")));
