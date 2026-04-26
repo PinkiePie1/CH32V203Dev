@@ -46,6 +46,18 @@ static int clamp_index(int value, int min_value, int max_value) {
     return value;
 }
 
+static inline _iq fast_approx_iq_sqrt(_iq value) {
+    if (value <= 0) {
+        return 0;
+    }
+
+    uint32_t i = (uint32_t)value;
+    uint32_t x = 1U << ((32U - (uint32_t)__builtin_clz(i)) >> 1U);
+    x = (x + i / x) >> 1U;
+
+    return (_iq)(x << (GLOBAL_Q >> 1U));
+}
+
 static _iq clampf_local(_iq value, _iq min_value, _iq max_value) {
     if (value < min_value) {
         return min_value;
@@ -190,7 +202,7 @@ void PushParticlesApart(unsigned int nIters) {
                     unsigned int lastIdx = cellParticleCountPrefix[cellNr + 1U];
                     for (unsigned int j = firstIdx; j < lastIdx; j++) {
                         unsigned int id = particlePosId[j];
-                        if (id == i) {
+                        if (id <= i) {
                             continue;
                         }
 
@@ -203,17 +215,19 @@ void PushParticlesApart(unsigned int nIters) {
                             continue;
                         }
 
-                        _iq d = _IQsqrt(d2);
+                        _iq d = fast_approx_iq_sqrt(d2);
                         _iq s = _IQdiv(_IQmpy(_IQ(0.5), (minDist - d)), d);
                         dx = _IQmpy(dx, s);
                         dy = _IQmpy(dy, s);
-                        particlePos[XID(i)] -= dx;
-                        particlePos[YID(i)] -= dy;
+                        px -= dx;
+                        py -= dy;
                         particlePos[XID(id)] += dx;
                         particlePos[YID(id)] += dy;
                     }
                 }
             }
+            particlePos[XID(i)] = px;
+            particlePos[YID(i)] = py;
         }
     }
     for (unsigned int i = 0; i < NumberOfParticles; i++) {
@@ -509,4 +523,3 @@ void screen_update() {
         }
     }    
 }
-
