@@ -202,7 +202,7 @@ void PushParticlesApart(unsigned int nIters) {
                     unsigned int lastIdx = cellParticleCountPrefix[cellNr + 1U];
                     for (unsigned int j = firstIdx; j < lastIdx; j++) {
                         unsigned int id = particlePosId[j];
-                        if (id == i) {
+                        if (id <= i) {
                             continue;
                         }
 
@@ -219,13 +219,15 @@ void PushParticlesApart(unsigned int nIters) {
                         _iq s = _IQdiv(_IQmpy(_IQ(0.5), (minDist - d)), d);
                         dx = _IQmpy(dx, s);
                         dy = _IQmpy(dy, s);
-                        particlePos[XID(i)] -= dx;
-                        particlePos[YID(i)] -= dy;
+                        px -= dx;
+                        py -= dy;
                         particlePos[XID(id)] += dx;
                         particlePos[YID(id)] += dy;
                     }
                 }
             }
+            particlePos[XID(i)] = px;
+            particlePos[YID(i)] = py;
         }
     }
     for (unsigned int i = 0; i < NumberOfParticles; i++) {
