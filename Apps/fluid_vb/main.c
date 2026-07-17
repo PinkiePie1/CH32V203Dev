@@ -9,6 +9,9 @@
 
 #define PUSH_ITER 1
 #define GRID_ITER 8
+/* 帧周期：TIM1更新中断约每175us一次(72MHz/21/600)，46拍约8ms，即最高约124fps。
+   仿真算完后主循环靠WFI睡到一帧结束，算得越快睡眠时间越长。 */
+#define FRAME_TICKS 46U
 
 /* Global Variable */
 
@@ -104,7 +107,6 @@ void Show(void)
  */
 int main(void)
 {
-    uint32_t timer = 0;
     NVIC_PriorityGroupConfig(NVIC_PriorityGroup_1);
     SystemCoreClockUpdate();
     Delay_Init();
@@ -134,9 +136,8 @@ try:
     _iq accey = _IQ(9.8f);
 
     while(1)
-    {   
-        NVIC_DisableIRQ(TIM1_CC_IRQn);
-        NVIC_DisableIRQ(TIM1_UP_IRQn);
+    {
+        uint32_t frameStart = tim1Tick;
 
         GetAcce(&accex,&accey);
         ParticleIntegrate(accex, accey);
@@ -147,13 +148,11 @@ try:
         grid_to_particles();
         Show();
 
-        NVIC_EnableIRQ(TIM1_CC_IRQn);
-        NVIC_EnableIRQ(TIM1_UP_IRQn);
-        while(timer ++ < 3)
+        /* TIM1中断保持使能，仿真期间也会打拍；睡满一个帧周期再算下一帧 */
+        while((uint32_t)(tim1Tick - frameStart) < FRAME_TICKS)
         {
            __WFI();
         }
-        timer = 0;
         if(sleepTimer++>5*100)
         {
             LED_TurnOff();

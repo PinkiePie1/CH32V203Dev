@@ -52,6 +52,9 @@ static uint32_t gpioCFGH[16] =
 static uint32_t dmaOutdrOn[PinCount];
 static uint32_t dmaOutdrOff[PinCount];
 
+/* TIM1更新中断次数，作为帧节奏的打拍计数(每拍约175us) */
+volatile uint32_t tim1Tick = 0;
+
 static void LED_RebuildDMABuffer(void)
 {
     for(u8 i = 0; i < PinCount; i++)
@@ -146,16 +149,33 @@ void LED_InitPeri(void)
     // CC3 -> channel 6
     // CC4 -> channel 4
 
-    //enable support for sleep mode. 
-    TIM_ITConfig(TIM1,TIM_IT_CC1 | TIM_IT_CC3 | TIM_IT_Update,ENABLE);
-	NVIC_EnableIRQ(TIM1_CC_IRQn);
+    //enable support for sleep mode.
+    //只需要Update中断做帧节拍打拍；CC中断仅用于唤醒，DMA刷新不依赖它，关掉以减少唤醒次数
+    TIM_ITConfig(TIM1,TIM_IT_Update,ENABLE);
+    //NVIC_EnableIRQ(TIM1_CC_IRQn);
     NVIC_EnableIRQ(TIM1_UP_IRQn);
 
 
 
 }
 
-void LED_SetPixel(uint16_t num, uint8_t color)
+static void LED_RecomputeRowBrightness(u16 y)
+{
+    if(mode == 0){
+        u8 count = 0;
+        for (u32 comp = 0x3; comp; comp<<=4)
+        {
+            count = comp & gpioCFGH[y]?count+1:count;
+            count = comp & gpioCFGL[y]?count+1:count;
+        }
+        count -= 1;
+        uint16_t pwm = Period-(count);
+        pwm = pwm - (pwm>>Brightness);
+        bright[y] = pwm;
+    }
+}
+
+static void LED_SetPixelInternal(uint16_t num, uint8_t color, uint8_t updateBright)
 {
     num = LUT[num];
     u16 x = num % (PinCount - 1);
@@ -183,17 +203,28 @@ void LED_SetPixel(uint16_t num, uint8_t color)
             gpioCFGL[y] &= ~(0xF << (x * 4));
         }
     }
-    if(mode == 0){
-        u8 count = 0;
-        for (u32 comp = 0x3; comp; comp<<=4)
-        {
-            count = comp & gpioCFGH[y]?count+1:count;
-            count = comp & gpioCFGL[y]?count+1:count;
-        }
-        count -= 1;
-        uint16_t pwm = Period-(count);
-        pwm = pwm - (pwm>>Brightness);
-        bright[y] = pwm;
+    if(updateBright){
+        LED_RecomputeRowBrightness(y);
+    }
+}
+
+void LED_SetPixel(uint16_t num, uint8_t color)
+{
+    LED_SetPixelInternal(num, color, 1);
+}
+
+/* 只写像素不重算亮度，配合LED_CommitBrightness批量刷新一整帧 */
+void LED_SetPixelFast(uint16_t num, uint8_t color)
+{
+    LED_SetPixelInternal(num, color, 0);
+}
+
+/* 整帧像素写完后统一重算所有行的亮度补偿 */
+void LED_CommitBrightness(void)
+{
+    for(u16 y = 0; y < PinCount; y++)
+    {
+        LED_RecomputeRowBrightness(y);
     }
 }
 
@@ -239,6 +270,7 @@ void TIM1_UP_IRQHandler(void) __attribute__((interrupt("WCH-Interrupt-fast")));
 
 void TIM1_UP_IRQHandler(void)
 {
+    tim1Tick++;
     TIM_ClearITPendingBit(TIM1, TIM_IT_Update);
 }
 
