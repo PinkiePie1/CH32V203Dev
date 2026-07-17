@@ -14,12 +14,7 @@
 #define PinCount 16
 /* Global Variable */
 
-/* TIM1更新中断打拍计数，主循环用它做帧周期睡眠 */
-extern volatile uint32_t tim1Tick;
-
 void LED_SetPixel(uint16_t num, uint8_t color);
-void LED_SetPixelFast(uint16_t num, uint8_t color); //只写像素不重算亮度，批量刷新后用LED_CommitBrightness统一重算
-void LED_CommitBrightness(void);
 void LED_InitPeri(void);
 void LED_Show(void);
 void LED_TurnOff(void);

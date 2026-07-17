@@ -9,9 +9,11 @@
 
 #define PUSH_ITER 1
 #define GRID_ITER 8
-/* 帧周期：TIM1更新中断约每175us一次(72MHz/21/600)，46拍约8ms，即最高约124fps。
-   仿真算完后主循环靠WFI睡到一帧结束，算得越快睡眠时间越长。 */
-#define FRAME_TICKS 46U
+/* 帧节奏：每帧的WFI唤醒次数。TIM1每175us产生CC1/CC3/Update三个事件(72MHz/21/600)，
+   50次唤醒约3ms。厂家确认DMA写GPIO时CPU必须处于唤醒状态，因此这三个中断必须
+   保持使能（见charlie.c），CPU只能在两次DMA事件之间小睡。调大该值则帧率降低、
+   睡眠占比升高；调小则仿真动作更快。 */
+#define FRAME_WAKES 50U
 
 /* Global Variable */
 
@@ -137,7 +139,8 @@ try:
 
     while(1)
     {
-        uint32_t frameStart = tim1Tick;
+        //uint32_t frameStart = tim1Tick;
+        uint32_t count = 15;
 
         GetAcce(&accex,&accey);
         ParticleIntegrate(accex, accey);
@@ -149,7 +152,7 @@ try:
         Show();
 
         /* TIM1中断保持使能，仿真期间也会打拍；睡满一个帧周期再算下一帧 */
-        while((uint32_t)(tim1Tick - frameStart) < FRAME_TICKS)
+        while(count--)
         {
            __WFI();
         }

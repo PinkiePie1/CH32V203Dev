@@ -547,13 +547,13 @@ void screen_update() {
             uint32_t cell = cellType[INDEX(x, y)];
             uint16_t pixel = (uint16_t)((x - 1) * 16 + (y - 1));
             if (cell == FLUID_CELL || cell == SOLID_CELL) {
-                LED_SetPixelFast(pixel,LEDON);
+                LED_SetPixel(pixel,LEDON);
             } else {
-                LED_SetPixelFast(pixel,LEDOFF);
+                LED_SetPixel(pixel,LEDOFF);
             }
         }
     }
     /* 整帧像素写完后再统一重算每行亮度补偿，代替原来的逐像素重算 */
-    LED_CommitBrightness();
+    //LED_CommitBrightness();
 }
 
