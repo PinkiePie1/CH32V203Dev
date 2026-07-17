@@ -27,6 +27,7 @@ static _iq particleRestDensity = 0;
 /* 内联定点乘法：结果与库函数_IQ24mpy完全一致((int64)a*b>>24)，省去每次乘法的函数调用开销 */
 static inline _iq qmul(_iq a, _iq b) {
     return (_iq)(((long long)a * (long long)b) >> 24);
+    //return _IQmpy(a,b);
 }
 
 /* 流体单元索引表，由particles_to_grid生成，供compute_grid_forces只遍历流体单元 */
@@ -89,7 +90,6 @@ void InitParticles() {
     memset(vVel, 0, sizeof(vVel));
     memset(uPrev, 0, sizeof(uPrev));
     memset(vPrev, 0, sizeof(vPrev));
-    //memset(pressure, 0, sizeof(pressure));
     memset(particleDensity, 0, sizeof(particleDensity));
     particleRestDensity = _IQ(0.0);
     setup_solid_mask();
@@ -499,7 +499,7 @@ void grid_to_particles(void) {
             unsigned int nr2 = INDEX((unsigned int)x1, (unsigned int)y1);
             unsigned int nr3 = INDEX((unsigned int)x0, (unsigned int)y1);
 
-            /* valid取值为0或1，原来的_IQmpy(valid, x)等价于条件累加 */
+            //条件加法比乘1快
             _iq d = 0;
             _iq picNum = 0;
             _iq corrNum = 0;
@@ -527,7 +527,7 @@ void grid_to_particles(void) {
                 continue;
             }
 
-            /* 原来两次除以d，合并为一次求倒数 */
+            // 先算D倒数
             _iq invD = _IQdiv(_IQ(1.0), d);
             _iq picV = qmul(picNum, invD);
             _iq corr = qmul(corrNum, invD);
@@ -553,7 +553,6 @@ void screen_update() {
             }
         }
     }
-    /* 整帧像素写完后再统一重算每行亮度补偿，代替原来的逐像素重算 */
-    //LED_CommitBrightness();
+
 }
 
