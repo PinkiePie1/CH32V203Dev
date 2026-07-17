@@ -4,9 +4,9 @@
 #include "debug.h"
 
 //模拟所用的参数
-#define NumberOfParticles 140U //粒子数量15
+#define NumberOfParticles 130U //粒子数量15
 #define ParticleRadius _IQ(0.019f) //粒子半径
-#define Spacing _IQ(0.045f)//网格间距
+#define Spacing _IQ(0.041f)//网格间距
 #define CellNumX 17U //x轴方向的网格数量
 #define CellNumY 18U //y轴方向的网格数量
 #define CellCount CellNumX*CellNumY //网格总数

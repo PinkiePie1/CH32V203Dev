@@ -139,8 +139,8 @@ try:
 
     while(1)
     {
-        //uint32_t frameStart = tim1Tick;
-        uint32_t count = 15;
+
+        uint32_t count = 50;
 
         GetAcce(&accex,&accey);
         ParticleIntegrate(accex, accey);
@@ -151,7 +151,7 @@ try:
         grid_to_particles();
         Show();
 
-        /* TIM1中断保持使能，仿真期间也会打拍；睡满一个帧周期再算下一帧 */
+        
         while(count--)
         {
            __WFI();
