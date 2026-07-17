@@ -201,25 +201,21 @@ void LIS2DH_Deinit(void)
 void LIS2DH_Get(int16_t * x, int16_t * y, int16_t * z)
 {
     uint8_t buf[10] = {0};
-    LIS2_Read(0x28,buf,6);
+    LIS2_Read(0x28,buf,4);//流体模拟只用X/Y两轴，少读2字节缩短I2C占用时间
 
-    uint8_t X_H,X_L,Y_H,Y_L,Z_H, Z_L; // Three-axis data (high and low)
+    uint8_t X_H,X_L,Y_H,Y_L; // Three-axis data (high and low)
     X_H=buf[1];
     X_L=buf[0];
     Y_H=buf[3];
     Y_L=buf[2];
-    Z_H=buf[5];
-    Z_L=buf[4];
-    int16_t SL_ACCEL_X,SL_ACCEL_Y,SL_ACCEL_Z ; // Three-axis data
+    int16_t SL_ACCEL_X,SL_ACCEL_Y ; // Three-axis data
     SL_ACCEL_X = (int16_t)((X_H<< 8) | X_L); // Merging data
     SL_ACCEL_Y = (int16_t)((Y_H<< 8) | Y_L); // Forcing data type conversion
-    SL_ACCEL_Z = (int16_t)((Z_H<< 8) | Z_L); // 16 bit signed integer data
     SL_ACCEL_X = SL_ACCEL_X>>6;
     SL_ACCEL_Y = SL_ACCEL_Y>>6;
-    SL_ACCEL_Z = SL_ACCEL_Z>>6;
 
     *x=SL_ACCEL_X;
     *y=SL_ACCEL_Y;
-    *z=SL_ACCEL_Z;
-    
+    *z=0;
+
 }
