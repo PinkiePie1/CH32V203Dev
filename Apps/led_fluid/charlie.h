@@ -16,5 +16,7 @@
 void LED_SetPixel(uint16_t num, uint8_t color);
 void LED_InitPeri(void);
 void LED_Show(void);
+void LED_DisplayStop(void);
+void LED_DisplayStart(void);
 
 #endif

@@ -1,4 +1,5 @@
 #include "charlie.h"
+#include <string.h>
 
 static uint8_t LUT[] = {
 15,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,
@@ -34,17 +35,33 @@ static uint8_t LUT[] = {
 
 static uint16_t bright[PinCount] = {offTime};//records the number of led for each row to adjust brightness
 
-static uint32_t gpioCFGL[16] =
+/* 行驱动基准图案:第 y 行的行引脚(阳极)必须恒为输出,LED 点亮只需再加第二个引脚。
+   LED_SetPixel 只增/删第二个引脚,永远不会重建行引脚,所以清屏(LED_DisplayStop)
+   必须恢复成这个基准图案而不是清零——清零会把行引脚一起抹掉,唤醒后整屏无法点亮 */
+static const uint32_t gpioCFGLBase[PinCount] =
 {0X00000003,0X00000030,0X00000300,0X00003000,
  0X00030000,0X00300000,0X03000000,0X30000000,
  0X00000000,0X00000000,0X00000000,0X00000000,
  0X00000000,0X00000000,0X00000000,0X00000000};
 
-static uint32_t gpioCFGH[16] =
+static const uint32_t gpioCFGHBase[PinCount] =
 {0X00000000,0X00000000,0X00000000,0X00000000,
  0X00000000,0X00000000,0X00000000,0X00000000,
  0X00000003,0X00000030,0X00000300,0X00003000,
  0X00030000,0X00300000,0X03000000,0X30000000};
+
+static uint32_t gpioCFGL[PinCount];
+static uint32_t gpioCFGH[PinCount];
+
+// 恢复扫描缓冲到行驱动基准(全灭,但行引脚保持输出)
+static void LED_ResetScanBuffers(void)
+{
+    memcpy(gpioCFGL, gpioCFGLBase, sizeof(gpioCFGL));
+    memcpy(gpioCFGH, gpioCFGHBase, sizeof(gpioCFGH));
+    for (u8 y = 0; y < PinCount; y++) {
+        bright[y] = offTime;
+    }
+}
 
 static uint32_t dmaOutdrOn[PinCount];
 static uint32_t dmaOutdrOff[PinCount];
@@ -55,8 +72,8 @@ static void LED_RebuildDMABuffer(void)
     {
         dmaOutdrOn[i] = (uint32_t)1U << i;
         dmaOutdrOff[i] = 0xFFFFFFFF;
-        bright[i]=offTime;
     }
+    LED_ResetScanBuffers();
 }
 
 static void LED_InitDMAChannel(DMA_Channel_TypeDef *ch, uint32_t periph, uint32_t mem)
@@ -142,6 +159,17 @@ void LED_InitPeri(void)
     TIM_ITConfig(TIM1,TIM_IT_CC1 | TIM_IT_CC3 | TIM_IT_Update,ENABLE);
 	NVIC_EnableIRQ(TIM1_CC_IRQn);
     NVIC_EnableIRQ(TIM1_UP_IRQn);
+
+    /* 扫描在这里一次启动后持续运行;显示睡眠只清空画面缓冲(LED_DisplayStop),
+       不再停止 TIM1/DMA,避免停机重启带来的相位/状态问题 */
+    DMA_Cmd(DMA1_Channel5, ENABLE);
+    DMA_Cmd(DMA1_Channel2, ENABLE);
+    DMA_Cmd(DMA1_Channel4, ENABLE);
+    DMA_Cmd(DMA1_Channel3, ENABLE);
+    DMA_Cmd(DMA1_Channel6, ENABLE);
+
+    TIM_SetCounter(TIM1, 0);
+    TIM_Cmd(TIM1, ENABLE);
 }
 
 // 点亮或熄灭某个LED
@@ -184,18 +212,30 @@ void LED_SetPixel(uint16_t num, uint8_t color)
     //PRINT("birght:[%d] is : %d\r\n",y,bright[y]);
 }
 
+void LED_DisplayStart(void)
+{
+    /* 唤醒显示:TIM1/DMA 一直在运行,画面由下一帧 screen_update() 重填,
+       这里只需恢复 TIM1 中断(主循环 WFI 帧节奏用) */
+    TIM_ClearITPendingBit(TIM1, TIM_IT_CC1 | TIM_IT_CC3 | TIM_IT_CC4 | TIM_IT_Update);
+    NVIC_EnableIRQ(TIM1_CC_IRQn);
+    NVIC_EnableIRQ(TIM1_UP_IRQn);
+}
+
 // 开启显示，启动timer触发DMA自动刷新GPIO寄存器
 void LED_Show(void)
 {
-    DMA_Cmd(DMA1_Channel5, ENABLE);
-    DMA_Cmd(DMA1_Channel2, ENABLE);
-    DMA_Cmd(DMA1_Channel4, ENABLE);
-    DMA_Cmd(DMA1_Channel3, ENABLE);
-    DMA_Cmd(DMA1_Channel6, ENABLE);
+    LED_DisplayStart();
+}
 
-    TIM_SetCounter(TIM1, 0);
-    TIM_Cmd(TIM1, ENABLE);
+// 显示休眠:扫描缓冲恢复到行驱动基准图案(DMA 继续扫,所有灯灭),
+// 并关掉 TIM1 中断;TIM1/DMA 本身不停,唤醒时零成本恢复。
+// 注意绝不能把 gpioCFGL/CFGH 清零:行引脚图案被抹掉后 LED_SetPixel 不会重建,唤醒会黑屏
+void LED_DisplayStop(void)
+{
+    NVIC_DisableIRQ(TIM1_CC_IRQn);
+    NVIC_DisableIRQ(TIM1_UP_IRQn);
 
+    LED_ResetScanBuffers();
 }
 
 void TIM1_CC_IRQHandler(void) __attribute__((interrupt("WCH-Interrupt-fast")));
