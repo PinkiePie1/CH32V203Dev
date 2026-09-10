@@ -10,3 +10,5 @@
 - `LIS2DWHXY.c`，`LIS2DWHXY.h`: 读取加速度计的驱动，适用于HXY版的LIS2DW，注意不可与原厂互换。
 - `charlie.c`,`charlie.h`:查理复用驱动LED点阵的程序
 - `scripts`文件夹：用于生成点阵所需要的LUT。将网表导出后对应部分粘贴到`netlist.txt`中并运行`genLUT.py`即可生成结果打印到命令行中，随后可将对应的数组粘贴到`charlie.c`。若接线有修改需要修改`genLUT.py`中的字典NET_TO_PB。
+
+算法性能优化及数值回归方法见 [PERFORMANCE.md](PERFORMANCE.md)。`scripts/compare_sim.py` 可比较两个固件 ELF 的流体状态和执行指令数，不连接硬件。
