@@ -32,7 +32,9 @@ static uint8_t LUT[] = {
 225,226,227,228,229,230,231,232,233,234,235,236,237,238,239,224
 };
 
-static uint16_t bright[PinCount] = {offTime};//records the number of led for each row to adjust brightness
+
+static uint16_t bright[PinCount] = {0};//records the number of led for each row to adjust Compensation
+static uint8_t mode = 0;//0 for auto adjust, 1 for fixed.
 
 static uint32_t gpioCFGL[16] =
 {0X00000003,0X00000030,0X00000300,0X00003000,
@@ -55,7 +57,7 @@ static void LED_RebuildDMABuffer(void)
     {
         dmaOutdrOn[i] = (uint32_t)1U << i;
         dmaOutdrOff[i] = 0xFFFFFFFF;
-        bright[i]=offTime;
+        bright[i]=Period-Compensation;
     }
 }
 
@@ -95,6 +97,7 @@ static void LED_InitDMAChannelHalfWord(DMA_Channel_TypeDef *ch, uint32_t periph,
     dmaCfg.DMA_Priority = DMA_Priority_High;
     dmaCfg.DMA_M2M = DMA_M2M_Disable;
     DMA_Init(ch, &dmaCfg);
+
 }
 
 // 初始化DMA、定时器和GPIO外设
@@ -111,6 +114,11 @@ void LED_InitPeri(void)
     GPIO_Init(GPIOB, &gpioInit);
 
     LED_RebuildDMABuffer();
+    for(uint32_t i = 0; i < 240; i++)
+    {
+        LED_SetPixel(i,LEDOFF);
+    }
+
 
     LED_InitDMAChannel(DMA1_Channel6, (uint32_t)&GPIOB->OUTDR, (uint32_t)dmaOutdrOn);
     LED_InitDMAChannel(DMA1_Channel2, (uint32_t)&GPIOB->CFGLR, (uint32_t)gpioCFGL);
@@ -120,16 +128,15 @@ void LED_InitPeri(void)
 
     timBaseCfg.TIM_Prescaler = 20;
     timBaseCfg.TIM_CounterMode = TIM_CounterMode_Up;
-    timBaseCfg.TIM_Period = (onTime + offTime) - 1U;
+    timBaseCfg.TIM_Period = Period - 1U;
     timBaseCfg.TIM_ClockDivision = TIM_CKD_DIV1;
     timBaseCfg.TIM_RepetitionCounter = 0;
     TIM_TimeBaseInit(TIM1, &timBaseCfg);
 
     TIM_SetCompare1(TIM1,1);
     TIM_SetCompare2(TIM1,1);
-    TIM_SetCompare3(TIM1,offTime);
+    TIM_SetCompare3(TIM1,Period-Compensation);
     TIM_SetCompare4(TIM1,1);
-
 
     TIM_DMACmd(TIM1, TIM_DMA_Update | TIM_DMA_CC1 | TIM_DMA_CC2 | TIM_DMA_CC3 |TIM_DMA_CC4, ENABLE);
     // update-> channel 5
@@ -142,9 +149,11 @@ void LED_InitPeri(void)
     TIM_ITConfig(TIM1,TIM_IT_CC1 | TIM_IT_CC3 | TIM_IT_Update,ENABLE);
 	NVIC_EnableIRQ(TIM1_CC_IRQn);
     NVIC_EnableIRQ(TIM1_UP_IRQn);
+
+
+
 }
 
-// 点亮或熄灭某个LED
 void LED_SetPixel(uint16_t num, uint8_t color)
 {
     num = LUT[num];
@@ -173,15 +182,18 @@ void LED_SetPixel(uint16_t num, uint8_t color)
             gpioCFGL[y] &= ~(0xF << (x * 4));
         }
     }
-    u8 count = 0;
-    for (u32 comp = 0x3; comp; comp<<=4)
-    {
-        count = comp & gpioCFGH[y]?count+1:count;
-        count = comp & gpioCFGL[y]?count+1:count;
+    if(mode == 0){
+        u8 count = 0;
+        for (u32 comp = 0x3; comp; comp<<=4)
+        {
+            count = comp & gpioCFGH[y]?count+1:count;
+            count = comp & gpioCFGL[y]?count+1:count;
+        }
+        count -= 1;
+        uint16_t pwm = Period-(count);
+        pwm = pwm - (pwm>>Brightness);
+        bright[y] = pwm;
     }
-    count -= 1;
-    bright[y] = offTime-count;
-    //PRINT("birght:[%d] is : %d\r\n",y,bright[y]);
 }
 
 // 开启显示，启动timer触发DMA自动刷新GPIO寄存器
@@ -192,11 +204,34 @@ void LED_Show(void)
     DMA_Cmd(DMA1_Channel4, ENABLE);
     DMA_Cmd(DMA1_Channel3, ENABLE);
     DMA_Cmd(DMA1_Channel6, ENABLE);
-
     TIM_SetCounter(TIM1, 0);
     TIM_Cmd(TIM1, ENABLE);
 
 }
+
+void LED_TurnOff(void)
+{
+    TIM_Cmd(TIM1, DISABLE);
+    GPIOB->BCR=0xFFFFFFFF;
+    GPIOB->CFGLR = 0;
+    GPIOB->CFGHR = 0;
+
+}
+
+//if it's -1, use auto compensation, else use fixed brightness
+void LED_Brightness(int32_t brightness)
+{
+    if(brightness<=0){
+        mode = 0;
+    } else {
+        mode = 1;
+        for(u8 i = 0; i < PinCount; i++)
+        {
+            bright[i]=Period-brightness;
+        }
+    }
+}
+
 
 void TIM1_CC_IRQHandler(void) __attribute__((interrupt("WCH-Interrupt-fast")));
 void TIM1_UP_IRQHandler(void) __attribute__((interrupt("WCH-Interrupt-fast")));

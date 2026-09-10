@@ -140,7 +140,7 @@ try:
     while(1)
     {
 
-        uint32_t count = 50;
+        uint32_t count = 70;
 
         GetAcce(&accex,&accey);
         ParticleIntegrate(accex, accey);

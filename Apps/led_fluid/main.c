@@ -28,7 +28,7 @@
 /* Global define */
 
 #define PUSH_ITER 1
-#define GRID_ITER 12
+#define GRID_ITER 8
 uint8_t ticks=0;
 /* Global Variable */
 
@@ -63,7 +63,7 @@ void shutdown(void){
 }
 
 
-void GetAcce(uint32_t i, _iq * accex, _iq * accey)
+void GetAcce( _iq * accex, _iq * accey)
 {
     int16_t x,y,z;
     LIS2DH_Get(&x,&y,&z);
@@ -126,7 +126,7 @@ int main(void)
     _iq accey = _IQ(9.8f);
 
     for (int i=0;i<5;i++){
-        GetAcce(7000,&accex,&accey);
+        GetAcce(&accex,&accey);
         ParticleIntegrate(accex, accey);
         PushParticlesApart(PUSH_ITER);
         particles_to_grid();
@@ -147,7 +147,7 @@ int main(void)
     {   
         NVIC_DisableIRQ(TIM1_CC_IRQn);
         NVIC_DisableIRQ(TIM1_UP_IRQn);
-        GetAcce(7000,&accex,&accey);
+        GetAcce(&accex,&accey);
         ParticleIntegrate(accex, accey);
         PushParticlesApart(PUSH_ITER);
         particles_to_grid();
@@ -157,7 +157,7 @@ int main(void)
         Show();
         NVIC_EnableIRQ(TIM1_CC_IRQn);
         NVIC_EnableIRQ(TIM1_UP_IRQn);
-        while(timer ++ < 10)
+        while(timer ++ < 150)
         {__WFI();}
         timer = 0;
         if(GPIO_ReadInputDataBit(GPIOA,GPIO_Pin_0) == Bit_RESET){
