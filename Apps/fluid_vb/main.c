@@ -9,11 +9,7 @@
 
 #define PUSH_ITER 1
 #define GRID_ITER 8
-/* 帧节奏：每帧的WFI唤醒次数。TIM1每175us产生CC1/CC3/Update三个事件(72MHz/21/600)，
-   50次唤醒约3ms。厂家确认DMA写GPIO时CPU必须处于唤醒状态，因此这三个中断必须
-   保持使能（见charlie.c），CPU只能在两次DMA事件之间小睡。调大该值则帧率降低、
-   睡眠占比升高；调小则仿真动作更快。 */
-#define FRAME_WAKES 50U
+#define FRAME_WAKES 110U
 
 /* Global Variable */
 
@@ -140,7 +136,11 @@ try:
     while(1)
     {
 
+<<<<<<< HEAD
         uint32_t count = 70;
+=======
+        uint32_t count = FRAME_WAKES;
+>>>>>>> 42aa53b (2.7mA)
 
         GetAcce(&accex,&accey);
         ParticleIntegrate(accex, accey);
