@@ -1,5 +1,8 @@
 #include "charlie.h"
 
+uint8_t clockUpdate = 1;
+uint8_t clockSpeed = FAST;
+
 const uint16_t LUT[240] = {
     101,  26, 181, 211,  28,  43, 212, 167,
      40, 160, 175,   9, 150,  60,   3,  68,
@@ -134,13 +137,13 @@ void LED_InitPeri(void)
     timBaseCfg.TIM_RepetitionCounter = 0;
     TIM_TimeBaseInit(TIM1, &timBaseCfg);
 
-    TIM_SetCompare1(TIM1,1);
-    TIM_SetCompare2(TIM1,1);
-    TIM_SetCompare3(TIM1,Period-Compensation);
-    TIM_SetCompare4(TIM1,1);
+    TIM_SetCompare1(TIM1,600); // cfgl
+    TIM_SetCompare2(TIM1,600); // cfgh //these two needs to be higher or ghosting appears when switching clock signals
+    TIM_SetCompare3(TIM1,Period); //odron
+    TIM_SetCompare4(TIM1,1); // brightness
 
     TIM_DMACmd(TIM1, TIM_DMA_Update | TIM_DMA_CC1 | TIM_DMA_CC2 | TIM_DMA_CC3 |TIM_DMA_CC4, ENABLE);
-    // update-> channel 5
+    // update-> channel 5, odr off
     // CC1 -> channel 2
     // CC2 -> channel 3
     // CC3 -> channel 6
@@ -194,7 +197,7 @@ void LED_SetPixel(uint16_t num, uint8_t color)
         uint16_t pwm = Period-(count);
         pwm = pwm - (pwm>>Brightness);
         bright[y] = pwm;
-    }
+    } 
 }
 
 // 开启显示，启动timer触发DMA自动刷新GPIO寄存器
@@ -239,6 +242,13 @@ void TIM1_UP_IRQHandler(void) __attribute__((interrupt("WCH-Interrupt-fast")));
 
 void TIM1_UP_IRQHandler(void)
 {
+    //has to update clock synchronously. otherwise brightness in rows will change
+    if(clockUpdate)
+    {
+       uint32_t dat = clockSpeed == FAST ? ((RCC->CFGR0 & ~RCC_HPRE) | RCC_HPRE_DIV1) : ((RCC->CFGR0 & ~RCC_HPRE) | RCC_HPRE_DIV8);
+       RCC->CFGR0 = dat;
+       clockUpdate = 0;
+    }
     TIM_ClearITPendingBit(TIM1, TIM_IT_Update);
 }
 
