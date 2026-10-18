@@ -8,12 +8,17 @@
 /* Global define */
 
 #define PUSH_ITER 1
-#define GRID_ITER 8
-#define FRAME_WAKES 110U
+#define GRID_ITER 7
+#define FRAME_WAKES 60U
+
+#define TIM1_PSC_FAST   23     
+#define TIM1_PSC_SLOW   2   
 
 /* Global Variable */
 
 uint32_t sleepTimer = 0;
+
+
 
 void EXTI0_INT_INIT(void)
 {
@@ -103,6 +108,28 @@ void Show(void)
  *
  * @return  none
  */
+
+
+   
+
+volatile uint32_t g_clkState = 0;
+
+static void clock_to_fast(void)
+{
+
+    clockUpdate = 1;
+    clockSpeed = FAST;
+    TIM1->PSC = TIM1_PSC_FAST;
+}
+
+static void clock_to_slow(void)
+{
+    clockUpdate = 1;
+    clockSpeed = SLOW;
+    TIM1->PSC = TIM1_PSC_SLOW;
+}
+
+
 int main(void)
 {
     NVIC_PriorityGroupConfig(NVIC_PriorityGroup_1);
@@ -132,16 +159,20 @@ try:
 
     _iq accex = _IQ(0);
     _iq accey = _IQ(9.8f);
+    //clock_to_slow();
+
+    clockUpdate = 1;
+    clockSpeed = FAST;
+
+
+    
 
     while(1)
     {
 
-<<<<<<< HEAD
-        uint32_t count = 70;
-=======
-        uint32_t count = FRAME_WAKES;
->>>>>>> 42aa53b (2.7mA)
-
+        clock_to_fast();
+        while(clockUpdate){__WFI();}
+        
         GetAcce(&accex,&accey);
         ParticleIntegrate(accex, accey);
         PushParticlesApart(PUSH_ITER);
@@ -151,16 +182,19 @@ try:
         grid_to_particles();
         Show();
 
-        
+        clock_to_slow();
+        uint32_t count = FRAME_WAKES;
         while(count--)
         {
            __WFI();
         }
+#if 0   
         if(sleepTimer++>5*100)
         {
             LED_TurnOff();
             shutdown();
         }
+#endif
 
     }
 
