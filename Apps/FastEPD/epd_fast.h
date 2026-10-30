@@ -31,9 +31,6 @@ void EPD_Dat(uint8_t dat);
 void EPD_DelayUs(uint32_t us);
 void EPD_DelayMs(uint32_t ms);
 
-/* 软件延时等待（不使用 SysTick，SysTick 留给应用层）。 */
-void EPD_SleepUs(uint32_t us);
-
 /* ---------------------------------------------------------------- setup */
 
 void EPD_Hal_Init(void);
@@ -41,7 +38,6 @@ void EPD_Init(void);
 
 /* --------------------------------------------------------- full refresh */
 
-/* Full refresh, measured 1314 ms. */
 void EPD_SendDisplay(const uint8_t *image);
 
 /* ---------------------------------------------------------- fast refresh */
@@ -55,12 +51,12 @@ void EPD_SendDisplay(const uint8_t *image);
 void EPD_FastPrepare(void);
 void EPD_FastPrepareFrames(uint8_t frames);
 
-/* net 驱动中表示黑/白净驱动量的上下限；0 按 1，绝对值最大 7。 */
+// maximum budget for balck or white pixels
 void EPD_SetPulseBudget(uint8_t black, uint8_t white);
 
 /* One fast scan: drive the pixels in black toward black and the pixels in
- * white toward white. Pixels in neither mask keep their current colour, so the
- * two masks must not overlap. */
+ * white toward white. Pixels in neither mask keep their current colour,
+   Overlapped pixels are also not driven*/
 void EPD_FastScan(const uint8_t *black, const uint8_t *white);
 
 /* Initialize the net drive state from the frame currently shown on the panel.
