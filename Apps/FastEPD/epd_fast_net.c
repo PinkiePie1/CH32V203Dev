@@ -1,13 +1,5 @@
 /* ============================================================================
- * SSD1680 152x152 电子纸高刷驱动（epd_fast_net.c 算法）—— CH32V203
- *
- * 功能逻辑来自 V303 工程的 epd_fast_net.c；V203 移植部分保留本工程的
- * 20 KB RAM 优化、DMA 双缓冲和引脚/时钟改动。
- *
- * 换单片机时只需要改两处：
- *   1. 下面的 #include（CH32V203 SDK 头文件）
- *   2. 紧跟其后的「移植区」：引脚宏、SPI/DMA 参数、时基、收发原语、EPD_Hal_Init()
- * 移植区之后是纯驱动逻辑，和具体单片机无关。
+ * SSD1680 152x152 电子纸高刷驱动（
  * ==========================================================================*/
 
 #include "ch32v20x_conf.h"
@@ -17,29 +9,23 @@
 
 #include <string.h>
 
-/* 调试打印走 USART1(PA9)，需要先调用 USART_Printf_Init()。 */
-
-
 /* ============================================================================
  * ============================ 移植区（开始） ================================
  *
  * 换一颗单片机要重写的就是这一段：
  *   - 引脚宏 CS/DC/RST/BUSY
  *   - SPI 时钟分频、DMA 通道与传输完成标志
- *   - 纯软件延时：EPD_DelayUs / EPD_DelayMs
+ *   - 延时：EPD_DelayMs
  *   - 收发原语：spi_byte / EPD_Cmd / EPD_Dat / epd_dma_send / epd_dat_buf
- *   - EPD_Hal_Init()：时钟、GPIO、SPI、DMA 的初始化
+ *   - EPD_Hal_Init() 硬件初始化
  * ==========================================================================*/
 
 /* ---------------------------------------------------------------- 引脚
- *
- * CH32V203C8T6（LQFP48）没有 PC4，BUSY 改到 PA0：
  *
  *   PA0  BUSY（输入下拉，EXTI0 用来唤醒 WFI）
  *   PA3  DC        PA4  CS         PA5  SPI1 SCK（默认复用）
  *   PA6  RST       PA7  SPI1 MOSI（默认复用）
  *
- * 这样 EPD 的 7 根线占 PA0、PA3..PA7，全部位于 LQFP48 的相邻引脚上。
  */
 #define EPD_CS_PORT     GPIOA
 #define EPD_CS_PIN      GPIO_Pin_4
@@ -52,7 +38,7 @@
 
 /* BUSY 引脚接到哪根 EXTI / 哪个中断号（WFI 靠它唤醒） */
 #define EPD_BUSY_EXTI_LINE  EXTI_Line0
-#define EPD_BUSY_IRQn       EXTI0_IRQn      // CH32V203 的 EXTI 每根线一个中断
+#define EPD_BUSY_IRQn       EXTI0_IRQn      
 #define EPD_BUSY_EXTI_PORT  GPIO_PortSourceGPIOA
 #define EPD_BUSY_EXTI_PIN   GPIO_PinSource0
 
@@ -72,25 +58,15 @@
 // DMA设置。bulk传输走dma最快，比轮询fifo更快。
 // 移植到其他平台的话这些宏可以删掉，重新实现epd_dma_send即可。
 // 不想实现直接在该函数里循环EPD_Dat()也行。
+// 但SPI发送占时间较长。
 #define EPD_DMA_CHANNEL     DMA1_Channel3                     // SPI1_TX 固定走 DMA1 通道3
 #define EPD_DMA_TC_FLAG     DMA1_FLAG_TC3
 #define EPD_DMA_TC_READY()  (DMA_GetFlagStatus(EPD_DMA_TC_FLAG) != RESET)
 #define EPD_DMA_TC_CLEAR()  DMA_ClearFlag(EPD_DMA_TC_FLAG)
 #define EPD_DMA_MIN_LEN     256                               // 超过这个长度才走DMA
 
-/* 软件延时：144 MHz 下约 27 个空循环 / us。 */
+// 软件延时
 #define EPD_DELAY_LOOPS_PER_MS  27000u
-#define EPD_DELAY_LOOPS_PER_US  (EPD_DELAY_LOOPS_PER_MS / 1000u)
-
-void EPD_DelayUs(uint32_t us)
-{
-    uint32_t loops = us * EPD_DELAY_LOOPS_PER_US;
-
-    while (loops != 0u) {
-        --loops;
-        __asm__ volatile ("nop");
-    }
-}
 
 void EPD_DelayMs(uint32_t ms)
 {
@@ -153,7 +129,7 @@ static void epd_dma_start(const uint8_t *buf, uint32_t len)
     DMA_Cmd(EPD_DMA_CHANNEL, ENABLE);
 }
 
-// 等当前 DMA 块传完。这里只等 DMA TC
+// 等当前 DMA 块传完
 static void epd_dma_wait_tc(const uint8_t *buf, uint32_t len)
 {
     uint32_t guard = 2000000u;
@@ -327,7 +303,7 @@ void EXTI0_IRQHandler(void)
 /* 每像素净驱动帧数限制：黑方向不超过 +7，白方向不超过 -7。 */
 #define EPD_DC_BLACK        7
 #define EPD_DC_WHITE        7
-#define EPD_FAST_FRAMES     1      // 每次快刷扫描用几个控制器帧
+#//define EPD_FAST_FRAMES     1      // 每次快刷扫描用几个控制器帧
 #define EPD_RESET_HIGH_MS   50     // 保持 RST 高电平的时间 (ms)
 #define EPD_RESET_LOW_MS    20     // 拉低 RST 的时间 (ms)
 #define EPD_CLEAN_INTERVAL  10000   // 每多少次快刷做一次全刷清洁；0 = 关闭
@@ -391,7 +367,7 @@ static const uint8_t lut_fast_base[159] = {
 static uint8_t analog_on;          // the booster is up 
 static uint8_t s_dc_black = EPD_DC_BLACK;
 static uint8_t s_dc_white = EPD_DC_WHITE;
-static uint8_t s_fast_frames = EPD_FAST_FRAMES;
+//static uint8_t s_fast_frames = EPD_FAST_FRAMES;
 
 /* 每像素净驱动帧数：正数 = 黑方向，负数 = 白方向，限制在 [-7,+7]。
  * 4 bit 有符号补码（-8..+7），两个像素共用 1 字节。 */
@@ -429,8 +405,8 @@ static inline int epd_signed_nibble(uint8_t v)
 /* 上电/预算变化时重建查表。 */
 static void epd_build_mask_lut(void)
 {
-    const int hi_black = (int)s_dc_black - (int)s_fast_frames;
-    const int lo_white = -(int)s_dc_white + (int)s_fast_frames;
+    const int hi_black = (int)s_dc_black - (int)1;
+    const int lo_white = -(int)s_dc_white + (int)1;
 
     for (uint16_t v = 0; v < 256u; ++v) {
         const int n0 = epd_signed_nibble((uint8_t)v);
@@ -852,29 +828,9 @@ void EPD_SendDisplay(const uint8_t *image)
     }
 }
 
-void EPD_FastPrepareFrames(uint8_t frames)
+void EPD_FastPrepare(void)
 {
-    uint8_t scratch[159]; //in stack
-
-    //todo: remove the frame setting. All we need is 1 frame and we can change
-    //the lut's framerate setting to change driving time.
-
-    s_fast_frames = (frames != 0u) ? frames : 1u;
     epd_build_mask_lut();
-    for (uint16_t i = 0; i < 159u; ++i) {
-        scratch[i] = lut_fast_base[i];
-    }
-    if (frames <= 1u) {
-        scratch[60] = 0;
-        scratch[68] = 0;
-    } else if (frames == 2u) {
-        scratch[60] = 0;
-        scratch[68] = 1;
-    } else {
-        scratch[60] = (uint8_t)(frames - 2u);
-        scratch[68] = 1;
-    }
-
     epd_reset();           // hardware reset
     if (BUSY()) {
         return;
@@ -889,7 +845,7 @@ void EPD_FastPrepareFrames(uint8_t frames)
     EPD_Cmd(0x18);
     EPD_Dat(0x80);
 
-    epd_load_lut(scratch);
+    epd_load_lut(lut_fast_base);
     if (BUSY()) {
         return;
     }
@@ -903,11 +859,6 @@ void EPD_FastPrepareFrames(uint8_t frames)
     EPD_Dat(0x80);
 
     epd_analog_on();        //turns on analog (boost circuit of the EPD) withou turning it off.
-}
-
-void EPD_FastPrepare(void)
-{
-    EPD_FastPrepareFrames(EPD_FAST_FRAMES);
 }
 
 
@@ -997,7 +948,6 @@ static int epd_probe_for_drive(const uint8_t *next, uint8_t *r0, uint8_t *r1)
  * 无符号模运算即可，不需要 nibble -> int 再转回 nibble。 */
 static void epd_apply_charge(const uint8_t *next)
 {
-    const uint8_t frames = s_fast_frames;
 
     for (uint32_t i = 0; i < EPD_FRAME_BYTES; ++i) {
         const uint8_t px = next[i];
@@ -1024,15 +974,15 @@ static void epd_apply_charge(const uint8_t *next)
                 uint8_t n1 = (uint8_t)(nb >> 4);
 
                 if ((black & m0) != 0u) {
-                    n0 = (uint8_t)((n0 + frames) & 0x0Fu);
+                    n0 = (uint8_t)((n0 + 1) & 0x0Fu);
                 } else if ((white & m0) != 0u) {
-                    n0 = (uint8_t)((n0 - frames) & 0x0Fu);
+                    n0 = (uint8_t)((n0 - 1) & 0x0Fu);
                 }
 
                 if ((black & m1) != 0u) {
-                    n1 = (uint8_t)((n1 + frames) & 0x0Fu);
+                    n1 = (uint8_t)((n1 + 1) & 0x0Fu);
                 } else if ((white & m1) != 0u) {
-                    n1 = (uint8_t)((n1 - frames) & 0x0Fu);
+                    n1 = (uint8_t)((n1 - 1) & 0x0Fu);
                 }
 
                 cell[b] = (uint8_t)(n0 | (uint8_t)(n1 << 4));
@@ -1249,7 +1199,7 @@ int EPD_FastFrame(const uint8_t *next)
         /* 这一帧已经交给面板了，更新每像素净驱动帧数。 */
         epd_apply_charge(next);
     } else if (EPD_HOLD_ENDING && s_hold_pending) {
-        // if no pixel is driven then hold the screen by discharging
+        // if no pixel is driven then hold the screen.
         if (s_row1 >= s_row0) {
             EPD_FastSync();          /* 等上一帧刷完 */
             if (s_pending) {

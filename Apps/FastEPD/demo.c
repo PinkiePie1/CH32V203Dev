@@ -28,8 +28,6 @@ static void fill(int x, int y, int w, int h, int ink)
     }
 }
 
-/* 8x16 ASCII ���󣬷���� Fixedsys һ�£���׼ VGA BIOS ��ģ����
- * ÿ���ַ� 16 �У�ÿ��һ���ֽڣ�bit7 Ϊ�������ء� */
 static const uint8_t font8x16[128][16] = {
     [' '] = {0x00},
     ['.'] = {0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x18,0x18,0x00,0x00,0x00},
@@ -111,12 +109,10 @@ static void draw_fps(int x, int y, uint32_t fps)
 void display_demo(){
 
     EPD_Hal_Init();
-    Delay_Init();
-    USART_Printf_Init(115200);
     
     uint8_t notbegin = 1;
 
-    const int sq_size = 24;
+    const int sq_size = 28;
     const int margin = 30;      
     const int min_x = margin;
     const int min_y = margin;
@@ -145,7 +141,7 @@ void display_demo(){
             switch (dir) {
             case 0:
                 if (sq_x < max_x) {
-                    ++sq_x;
+                    sq_x+=1;
                 } else {
                     dir = 1;
                     pause = 14;
@@ -153,7 +149,7 @@ void display_demo(){
                 break;
             case 1:
                 if (sq_y < max_y) {
-                    ++sq_y;
+                    sq_y+=1;
                 } else {
                     dir = 2;
                     pause = 14;
@@ -161,7 +157,7 @@ void display_demo(){
                 break;
             case 2:
                 if (sq_x > min_x) {
-                    --sq_x;
+                    sq_x-=1;
                 } else {
                     dir = 3;
                     pause = 14;
@@ -169,7 +165,7 @@ void display_demo(){
                 break;
             default:
                 if (sq_y > min_y) {
-                    --sq_y;
+                    sq_y-=1;
                 } else {
                     dir = 0;
                     pause = 14;
@@ -178,11 +174,8 @@ void display_demo(){
             }
         }
 
-
-
         draw_fps(2, 2, fps_val);
         draw_num(2, 20, step);
-
 
         if(notbegin){
             notbegin = 0;
@@ -192,8 +185,8 @@ void display_demo(){
         }
 
         EPD_FastFrame(frame);
-        //EPD_FastSync();  //at about 67 (67!) FPS the ghosting is almost invisible (kept you waiting huh)
-        //Delay_Ms(8);     //commet out this delay and fast sync to get 140 FPS.
+        EPD_FastSync();  //at about 67 (67!) FPS the ghosting is almost invisible (kept you waiting huh)
+        Delay_Ms(15);     //commet out this delay and fast sync to get 140 FPS.
                      
         
         ++fps_cnt;
