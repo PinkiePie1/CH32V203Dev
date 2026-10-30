@@ -28,8 +28,8 @@ static void fill(int x, int y, int w, int h, int ink)
     }
 }
 
-/* 8x16 ASCII µãÕó£¬·ç¸ñÓë Fixedsys Ò»ÖÂ£¨±ê×¼ VGA BIOS ×ÖÄ££©¡£
- * Ã¿¸ö×Ö·û 16 ĞĞ£¬Ã¿ĞĞÒ»¸ö×Ö½Ú£¬bit7 Îª×î×óÏñËØ¡£ */
+/* 8x16 ASCII ï¿½ï¿½ï¿½ó£¬·ï¿½ï¿½ï¿½ï¿½ Fixedsys Ò»ï¿½Â£ï¿½ï¿½ï¿½×¼ VGA BIOS ï¿½ï¿½Ä£ï¿½ï¿½ï¿½ï¿½
+ * Ã¿ï¿½ï¿½ï¿½Ö·ï¿½ 16 ï¿½Ğ£ï¿½Ã¿ï¿½ï¿½Ò»ï¿½ï¿½ï¿½Ö½Ú£ï¿½bit7 Îªï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ø¡ï¿½ */
 static const uint8_t font8x16[128][16] = {
     [' '] = {0x00},
     ['.'] = {0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x18,0x18,0x00,0x00,0x00},
@@ -79,12 +79,8 @@ static void draw_num(int x, int y, uint32_t num)
     char buf[4];
     int n = 0;
 
-    //if (num >= 100u) {
         buf[n++] = (char)('0' + (num / 100u) % 10u);
-    //}
-    //if (num >= 10u) {
         buf[n++] = (char)('0' + (num / 10u) % 10u);
-    //}
     buf[n++] = (char)('0' + num % 10u);
     buf[n] = '\0';
 
@@ -121,15 +117,15 @@ void display_demo(){
     uint8_t notbegin = 1;
 
     const int sq_size = 24;
-    const int margin = 30;                       /* ¹ì¼£ÀëÆÁÄ»±ßÔµµÄ¾àÀë */
+    const int margin = 30;      
     const int min_x = margin;
     const int min_y = margin;
     const int max_x = EPD_W - margin - sq_size;
     const int max_y = EPD_H - margin - sq_size;
     int sq_x = min_x;
     int sq_y = min_y;
-    int dir = 0;                                 /* 0=ÓÒ 1=ÏÂ 2=×ó 3=ÉÏ */
-    int pause = 0;                               /* µ½½ÇÂäºóµÄÍ£¶ÙÖ¡Êı */
+    int dir = 0;                                
+    int pause = 0;                             
     int step = 0;
 
     uint32_t fps_val = 0;
@@ -138,12 +134,11 @@ void display_demo(){
 
 
     while(1){
-        //¿ØÖÆ»­ÃæÉú³ÉËÙ¶È
+
 
         memset(frame, 0xFF, sizeof(frame));
         fill(sq_x, sq_y, sq_size, sq_size, 1);
 
-        /* ÑØ´óÕı·½ĞÎ¹ì¼£×ß£¬Ã¿Ö¡ 1 ÏñËØ£»µ½½ÇÂäÍ£ 10 Ö¡ÔÙ¹ÕÍä */
         if (pause > 0) {
             --pause;
         } else {
@@ -153,7 +148,7 @@ void display_demo(){
                     ++sq_x;
                 } else {
                     dir = 1;
-                    pause = 10;
+                    pause = 14;
                 }
                 break;
             case 1:
@@ -161,7 +156,7 @@ void display_demo(){
                     ++sq_y;
                 } else {
                     dir = 2;
-                    pause = 10;
+                    pause = 14;
                 }
                 break;
             case 2:
@@ -169,7 +164,7 @@ void display_demo(){
                     --sq_x;
                 } else {
                     dir = 3;
-                    pause = 10;
+                    pause = 14;
                 }
                 break;
             default:
@@ -177,7 +172,7 @@ void display_demo(){
                     --sq_y;
                 } else {
                     dir = 0;
-                    pause = 10;
+                    pause = 14;
                 }
                 break;
             }
@@ -185,7 +180,6 @@ void display_demo(){
 
 
 
-    /*ÕâÀï·ÅÉú³É»­ÃæµÄ´úÂë*/
         draw_fps(2, 2, fps_val);
         draw_num(2, 20, step);
 
@@ -198,6 +192,9 @@ void display_demo(){
         }
 
         EPD_FastFrame(frame);
+        //EPD_FastSync();  //at about 67 (67!) FPS the ghosting is almost invisible (kept you waiting huh)
+        //Delay_Ms(8);     //commet out this delay and fast sync to get 140 FPS.
+                     
         
         ++fps_cnt;
         {
@@ -208,7 +205,7 @@ void display_demo(){
                 fps_cnt = 0;
                 fps_sec = now;
                 printf("FPS:%u\r\n", (unsigned)fps_val);
-                step = step++ > 99?0:step;
+                step = step++ > 999?0:step;
             }
         }
     }
