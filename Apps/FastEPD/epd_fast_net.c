@@ -327,10 +327,6 @@ void EXTI0_IRQHandler(void)
  * 墨水屏驱动参数：
  * ==========================================================================*/
 
-/* 局部窗口开关：
- *   1 = 只把有变化的行推给面板（省传输，默认）
- *   0 = 每次都写整屏 152 行 */
-#define EPD_PARTIAL_WINDOW  0
 
 /* 每像素净驱动帧数限制：黑方向不超过 +7，白方向不超过 -7。 */
 #define EPD_DC_BLACK        7
@@ -654,12 +650,6 @@ static void epd_restore_clock(void)
     SystemCoreClockUpdate();
 }
 
-/* 低功耗等待：时基改用 LSI/RTC 后 SysTick 空闲，这里保持软件延时。 */
-void EPD_SleepUs(uint32_t us)
-{
-    EPD_DelayUs(us);
-}
-
 /* 等 BUSY 落下：进 STOP 睡眠，BUSY 下降沿或 RTC 闹钟唤醒。
  * timeout_s 单位：秒；RTC 每 0.5 s 计一个 tick，闹钟直接用计数器值比较。 */
 static void epd_wait(uint32_t timeout_s)
@@ -672,8 +662,6 @@ static void epd_wait(uint32_t timeout_s)
         return;
     }
 
-    /* uint32 加法自然回绕：计数器接近 0xFFFFFFFF 时，deadline 会变成
-     * 溢出后的小值，等 CNT 回绕到 0 再递增即可命中。 */
     deadline = RTC_GetCounter() + timeout_s * EPD_RTC_HZ;
 
     while (BUSY()) {
@@ -690,26 +678,20 @@ static void epd_wait(uint32_t timeout_s)
 
         /* 闹钟直接写 deadline；只要 now < deadline 就至少还有 1 个 tick
          * (0.5 s) 的余量，不会因为设置耗时错过。 */
-        RTC_SetAlarm(deadline);
-        RTC_WaitForLastTask();
-        RTC_ClearITPendingBit(RTC_IT_ALR);
-        EXTI_ClearITPendingBit(EXTI_Line17);
-        EXTI_ClearITPendingBit(EPD_BUSY_EXTI_LINE);
-        NVIC_ClearPendingIRQ(RTCAlarm_IRQn);
-        NVIC_ClearPendingIRQ(EPD_BUSY_IRQn);
 
+        RTC_ClearITPendingBit(RTC_IT_ALR);
+        NVIC_ClearPendingIRQ(RTCAlarm_IRQn);
         /* 清挂起位到进 STOP 之间 BUSY 可能已经落下，再确认一次 */
         if (!BUSY()) {
             break;
         }
-
+        RTC_SetAlarm(deadline);
         PWR_EnterSTOPMode(PWR_Regulator_LowPower, PWR_STOPEntry_WFI);
         epd_restore_clock();
     }
 
     /* 正常结束后把闹钟移到很远，避免后续误触发 */
     RTC_SetAlarm(0xFFFFFFFFu);
-    RTC_WaitForLastTask();
 }
 
 /* -------------------------------------------------------------- helpers */
@@ -906,7 +888,10 @@ void EPD_SendDisplay(const uint8_t *image)
 
 void EPD_FastPrepareFrames(uint8_t frames)
 {
-    static uint8_t scratch[159];
+    uint8_t scratch[159]; //in stack
+
+    //todo: remove the frame setting. All we need is 1 frame and we can change
+    //the lut's framerate setting to change driving time.
 
     s_fast_frames = (frames != 0u) ? frames : 1u;
     epd_build_mask_lut();
@@ -924,7 +909,7 @@ void EPD_FastPrepareFrames(uint8_t frames)
         scratch[68] = 1;
     }
 
-    epd_reset();            /* hardware reset only: the partial path skips 0x12 */
+    epd_reset();           // hardware reset
     if (BUSY()) {
         return;
     }
@@ -943,7 +928,7 @@ void EPD_FastPrepareFrames(uint8_t frames)
         return;
     }
 
-    EPD_Cmd(0x37);          /* no automatic RAM ping-pong */
+    EPD_Cmd(0x37);          // no RAM ping-pong
     for (uint8_t i = 0; i < 10u; ++i) {
         EPD_Dat(0x00);
     }
@@ -951,7 +936,7 @@ void EPD_FastPrepareFrames(uint8_t frames)
     EPD_Cmd(0x3C);
     EPD_Dat(0x80);
 
-    epd_analog_on();        /* power up once and keep it up */
+    epd_analog_on();        //turns on analog (boost circuit of the EPD) withou turning it off.
 }
 
 void EPD_FastPrepare(void)
@@ -959,7 +944,7 @@ void EPD_FastPrepare(void)
     EPD_FastPrepareFrames(EPD_FAST_FRAMES);
 }
 
-/* 与 budget 驱动共用接口；这里表示黑/白方向一次变化后的最大预驱动帧数。 */
+
 void EPD_SetPulseBudget(uint8_t black, uint8_t white)
 {
     /* 3 bit 计数最大为 7；0 仍按 1 处理。 */
@@ -1000,43 +985,9 @@ void EPD_FastScan(const uint8_t *black, const uint8_t *white)
     epd_wait(EPD_BUSY_POLLS_SCAN);
 }
 
-#if EPD_PARTIAL_WINDOW
-/* 全帧扫描：只在 EPD_PARTIAL_WINDOW=1 时用于得到准确的起止行。
- * 普通全屏发送使用下面的 epd_probe_for_drive() 提前退出。 */
-static int epd_plan_frame(const uint8_t *next, uint8_t *r0, uint8_t *r1)
-{
-    uint8_t first = EPD_H;
-    uint8_t last = 0;
-    int driven = 0;
 
-    for (uint32_t row = 0; row < EPD_H; ++row) {
-        int any = 0;
-
-        for (uint32_t k = 0; k < EPD_STRIDE; ++k) {
-            if (epd_frame_byte_needs_drive(next, row * EPD_STRIDE + k)) {
-                any = 1;
-                break;
-            }
-        }
-
-        if (any != 0) {
-            if (row < first) {
-                first = (uint8_t)row;
-            }
-            last = (uint8_t)row;
-            driven = 1;
-        }
-    }
-
-    *r0 = first;
-    *r1 = last;
-    return driven;
-}
-#endif
-
-#if !EPD_PARTIAL_WINDOW
-/* 全屏模式下只需要知道“本帧是否有像素要驱动”。从上次找到的位置开始，
- * 找到第一个要驱动的像素就立即退出；若到帧尾没有找到则绕回帧首继续。 */
+//only needs to find if there's pixels that needs driving. Usually faster than going
+//through the entire display buffer and figure out display window.
 static int epd_probe_for_drive(const uint8_t *next, uint8_t *r0, uint8_t *r1)
 {
     uint32_t start = s_probe_pos;
@@ -1063,19 +1014,17 @@ static int epd_probe_for_drive(const uint8_t *next, uint8_t *r0, uint8_t *r1)
     }
 
     if (found == EPD_FRAME_BYTES) {
-        /* 本次没有任何驱动；保留游标，等下一次继续从这里探测。 */
         *r0 = EPD_H;
         *r1 = 0;
         return 0;
     }
 
-    /* 下次仍然从这个像素位置附近开始探测。 */
+    // 下次仍然从这个像素位置附近开始探测
     s_probe_pos = found;
     *r0 = 0;
     *r1 = (uint8_t)(EPD_H - 1);
     return 1;
 }
-#endif
 
 /* 面板刷完后，按实际驱动方向更新净驱动帧数。
  * 驱动阈值已经保证 nibble 加减不会越过 [-7,+7]，所以直接做 4 bit
@@ -1153,13 +1102,13 @@ static void epd_build_plane_chunk(uint8_t *dst, uint32_t frame_offset, uint32_t 
 
         memcpy(&net_word, cell, sizeof(net_word));
 
-        /* 32-bit 全饱和跳过。 */
+        //skip if it's all white or all black.
         if ((plane == 0u) && (net_word == 0x77777777u)) {
-            dst[i] = 0x00;      /* 8 个 net 全为 +7，黑方向已经饱和 */
+            dst[i] = 0x00;     //all black 
             continue;
         }
         if ((plane != 0u) && (net_word == 0x99999999u)) {
-            dst[i] = 0x00;      /* 8 个 net 全为 -7，白方向已经饱和 */
+            dst[i] = 0x00;      //all white
             continue;
         }
 
@@ -1172,15 +1121,8 @@ static void epd_build_plane_chunk(uint8_t *dst, uint32_t frame_offset, uint32_t 
     }
 }
 
-/* 按窗口把一张由状态表实时生成的平面送给面板。
- *
- * 双缓冲流水：
- *   1. 生成长度为 L 的 A 块并启动 DMA；
- *   2. DMA 发 A 时，CPU 生成下一块 B；
- *   3. 等 A 的 DMA TC 后立刻启动 B；
- *   4. DMA 发 B 时，CPU 生成下一块 A，如此循环。
- *
- * 块之间不等待 SPI BSY，只等 DMA TC，所以计算时间被隐藏在传输期间。 */
+//generate mask plane and send
+// A/B buffer, almost as fast as an entire transfer.
 static void epd_send_generated_plane(uint8_t cmd, uint8_t plane,
                                      const uint8_t *next,
                                      uint8_t row0, uint8_t row1,
@@ -1307,12 +1249,10 @@ int EPD_FastFrame(const uint8_t *next)
     // 阶段清零，每隔一段时间全刷 
     if ((EPD_CLEAN_INTERVAL != 0) && (s_scan_count >= (uint32_t)EPD_CLEAN_INTERVAL)) {
         PRINT("[EPD] clean refresh after %u fast scans\r\n", (unsigned)s_scan_count);
-        /* 只看本次全刷是否超时：历史超时标志若一直留着，这里每次都会判失败，
-         * s_scan_count 就永远清不掉，于是每帧都来一次全刷。 */
         s_busy_timeout = 0;
         EPD_SendDisplay(next);
         if (s_busy_timeout) {
-            s_scan_count = 0;    /* 本次失败也退出 clean，避免每帧重试全刷 */
+            s_scan_count = 0;  
             return -1;
         }
         EPD_FastBegin(next);
@@ -1322,15 +1262,8 @@ int EPD_FastFrame(const uint8_t *next)
 
     /* 全屏模式只需找到第一个需要驱动的像素即可提前退出；
      * 局部窗口模式需要完整扫描才能得到准确的行范围。 */
-#if EPD_PARTIAL_WINDOW
-    driven = epd_plan_frame(next, &row0, &row1);
-#else
     driven = epd_probe_for_drive(next, &row0, &row1);
-#endif
 
-    /* 列范围固定整行（0..18）。列也缩小范围AI没搞出来。
-    不过之前light ink做到过，所以肯定是有办法的
-    不过这个只影响写入RAM的速度，作用不算很大，不浪费时间了 */
     s_col0 = 0;
     s_col1 = (uint8_t)(EPD_STRIDE - 1);
 
@@ -1344,11 +1277,9 @@ int EPD_FastFrame(const uint8_t *next)
         s_row1 = row1;
 
         //把待刷新的数据写入EPD中
-#if EPD_PARTIAL_WINDOW
-        epd_send_planes(next, s_row0, s_row1, s_col0, s_col1);    /* 只发变化的行 */
-#else
+
         epd_send_planes(next, 0, (uint8_t)(EPD_H - 1), 0, (uint8_t)(EPD_STRIDE - 1));
-#endif
+
         //刷新动作就是这个函数。触发刷新之后对像素预算进行处理就很快返回了。如果单核的话此时主循环就可以去算下一帧。
         epd_activate();
 
