@@ -79,12 +79,8 @@ static void draw_num(int x, int y, uint32_t num)
     char buf[4];
     int n = 0;
 
-    //if (num >= 100u) {
         buf[n++] = (char)('0' + (num / 100u) % 10u);
-    //}
-    //if (num >= 10u) {
         buf[n++] = (char)('0' + (num / 10u) % 10u);
-    //}
     buf[n++] = (char)('0' + num % 10u);
     buf[n] = '\0';
 
@@ -152,7 +148,7 @@ void display_demo(){
                     ++sq_x;
                 } else {
                     dir = 1;
-                    pause = 1;
+                    pause = 14;
                 }
                 break;
             case 1:
@@ -160,7 +156,7 @@ void display_demo(){
                     ++sq_y;
                 } else {
                     dir = 2;
-                    pause = 1;
+                    pause = 14;
                 }
                 break;
             case 2:
@@ -168,7 +164,7 @@ void display_demo(){
                     --sq_x;
                 } else {
                     dir = 3;
-                    pause = 1;
+                    pause = 14;
                 }
                 break;
             default:
@@ -176,7 +172,7 @@ void display_demo(){
                     --sq_y;
                 } else {
                     dir = 0;
-                    pause = 1;
+                    pause = 14;
                 }
                 break;
             }
@@ -196,9 +192,9 @@ void display_demo(){
         }
 
         EPD_FastFrame(frame);
-        //EPD_FastSync();
-        //Delay_Ms(8); //at about 67 FPS the ghosting is almost invisible
-                     //commet out this delay and fast sync to get 140 FPS.
+        //EPD_FastSync();  //at about 67 (67!) FPS the ghosting is almost invisible (kept you waiting huh)
+        //Delay_Ms(8);     //commet out this delay and fast sync to get 140 FPS.
+                     
         
         ++fps_cnt;
         {
@@ -209,7 +205,7 @@ void display_demo(){
                 fps_cnt = 0;
                 fps_sec = now;
                 printf("FPS:%u\r\n", (unsigned)fps_val);
-                step = step++ > 99?0:step;
+                step = step++ > 999?0:step;
             }
         }
     }
