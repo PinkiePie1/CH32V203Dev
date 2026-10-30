@@ -15,6 +15,8 @@
 #include "epd_fast.h"
 #include "print.h"
 
+#include <string.h>
+
 /* 调试打印走 USART1(PA9)，需要先调用 USART_Printf_Init()。 */
 
 
@@ -74,7 +76,7 @@
 #define EPD_DMA_TC_FLAG     DMA1_FLAG_TC3
 #define EPD_DMA_TC_READY()  (DMA_GetFlagStatus(EPD_DMA_TC_FLAG) != RESET)
 #define EPD_DMA_TC_CLEAR()  DMA_ClearFlag(EPD_DMA_TC_FLAG)
-#define EPD_DMA_MIN_LEN     256                               // 超过这个长度才走 DMA
+#define EPD_DMA_MIN_LEN     256                               // 超过这个长度才走DMA
 
 /* 软件延时：144 MHz 下约 27 个空循环 / us。 */
 #define EPD_DELAY_LOOPS_PER_MS  27000u
@@ -148,13 +150,10 @@ static void epd_dma_start(const uint8_t *buf, uint32_t len)
     EPD_DMA_TC_CLEAR();
     EPD_DMA_CHANNEL->MADDR = (uint32_t)buf;
     DMA_SetCurrDataCounter(EPD_DMA_CHANNEL, (uint16_t)len);
-    /* 保证 CPU 对缓冲区的写入在 DMA 使能前已经完成。 */
-    __asm__ volatile ("" ::: "memory");
     DMA_Cmd(EPD_DMA_CHANNEL, ENABLE);
 }
 
-/* 等当前 DMA 块传完。这里只等 DMA TC，不等 SPI BSY：立刻启动下一块，
- * 让 SPI 的移位寄存器始终保持有数据可发。 */
+// 等当前 DMA 块传完。这里只等 DMA TC
 static void epd_dma_wait_tc(const uint8_t *buf, uint32_t len)
 {
     uint32_t guard = 2000000u;
@@ -176,7 +175,7 @@ static void epd_dma_wait_tc(const uint8_t *buf, uint32_t len)
     }
 }
 
-/* 一整张平面发完后，才等待移位寄存器清空并清理 DMA/SPI 状态。 */
+//after sending the entire plane, turn off DMA.
 static void epd_spi_wait_idle(void)
 {
     while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_TXE) == RESET) {
@@ -187,7 +186,7 @@ static void epd_spi_wait_idle(void)
     DMA_Cmd(EPD_DMA_CHANNEL, DISABLE);
     EPD_DMA_TC_CLEAR();
 
-    /* SPI传完要读一下接收 */
+    // SPI传完要读一下接收
     (void)SPI1->DATAR;
     (void)SPI1->STATR;
 }
@@ -222,6 +221,8 @@ static void epd_dat_buf(const uint8_t *buf, uint32_t len)
 }
 
 /* ------------------------------------------------------------ 硬件初始化 */
+
+static void epd_build_mask_lut(void);
 
 void EPD_Hal_Init(void)
 {
@@ -279,7 +280,7 @@ void EPD_Hal_Init(void)
     SPI_Init(SPI1, &spi);
     SPI_Cmd(SPI1, ENABLE);
 
-    /* DMA：DMA1 通道3 固定映射到 SPI1_TX，无需 DMAMUX */
+    // DMA：DMA1 通道3 固定映射到 SPI1_TX
     RCC_AHBPeriphClockCmd(RCC_AHBPeriph_DMA1, ENABLE);
     {
         DMA_InitTypeDef dma = {0};
@@ -299,10 +300,12 @@ void EPD_Hal_Init(void)
         DMA_Init(EPD_DMA_CHANNEL, &dma);
     }
     SPI_I2S_DMACmd(SPI1, SPI_I2S_DMAReq_Tx, ENABLE);
+
+    // 上电时按当前预算生成掩码/驱动判定查表。
+    epd_build_mask_lut();
 }
 
-/* BUSY 引脚的 EXTI 中断：只清标志，作用是让 epd_wait() 里的 WFI 醒过来。
- * 真正的判断还在 epd_wait() 里读引脚，所以这里不做任何业务逻辑。 */
+// interrupt handled for BUSY pin
 void EXTI0_IRQHandler(void) __attribute__((interrupt("WCH-Interrupt-fast")));
 void EXTI0_IRQHandler(void)
 {
@@ -320,10 +323,6 @@ void EXTI0_IRQHandler(void)
  * 墨水屏驱动参数：
  * ==========================================================================*/
 
-/* 局部窗口开关：
- *   1 = 只把有变化的行推给面板（省传输，默认）
- *   0 = 每次都写整屏 152 行 */
-#define EPD_PARTIAL_WINDOW  0
 
 /* 每像素净驱动帧数限制：黑方向不超过 +7，白方向不超过 -7。 */
 #define EPD_DC_BLACK        7
@@ -334,38 +333,10 @@ void EXTI0_IRQHandler(void)
 #define EPD_CLEAN_INTERVAL  10000   // 每多少次快刷做一次全刷清洁；0 = 关闭
 #define EPD_HOLD_ENDING     1      // 1 = 最后一帧驱动完后补一次全0电平扫描放电。
 
-#define EPD_PIXELS          (EPD_W * EPD_H)   /* 23104 */
+#define EPD_PIXELS          (EPD_W * EPD_H)  
 
 /* ------------------------------------------------------------ waveforms */
 
-/* Full refresh waveform taken from the user's CH572 driver, with the source
- * voltage fields flipped back to the polarity this driver uses. The flip is a
- * swap of the two bit fields 01 (VSH1) and 10 (VSL) in every VS field of the
- * four level rows, see Table 6-6 of the SSD1680 datasheet:
- *
- *   b = ((b & 0x55) << 1) | ((b & 0xAA) >> 1)
- *
- * 00 (VSS, no drive) and 11 (VSH2) are left alone, so untouched phases stay
- * untouched. Its stronger VSH1/VCOM (0x4A / 0x36) is what makes it fast.
- * Layout: 153 byte LUT, then 0x3F/0x03/0x04/0x2C take bytes 153..158. */
- /*
-static const uint8_t lut_full[159] = {
-    0x80,0x99,0x00,0x00,0x00,0x00,0x00,0x00,0x40,0x00,0x00,0x00,
-    0x40,0x99,0x00,0x00,0x00,0x00,0x00,0x00,0x80,0x00,0x00,0x00,
-    0x90,0x99,0x00,0x00,0x00,0x00,0x00,0x00,0x40,0x00,0x00,0x00,
-    0x40,0x99,0x00,0x00,0x00,0x00,0x00,0x00,0x80,0x00,0x00,0x00,
-    0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
-    0x0b,0x01,0x01,0x00,0x00,0x00,0x00,0x05,0x05,0x00,0x03,0x03,
-    0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
-    0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
-    0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
-    0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x0b,0x01,0x01,0x00,
-    0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
-    0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
-    0x33,0x44,0x44,0x45,0x43,0x44,0x00,0x00,0x00,0x22,0x17,0x4a,
-    0x00,0x38,0x36,
-};
-*/
 static const uint8_t lut_full[159] =
 {
 0x80,	0x48,	0x40,	0x0,	0x0,	0x0,	0x0,	0x0,	0x0,	0x0,	0x0,	0x0,
@@ -417,25 +388,30 @@ static const uint8_t lut_fast_base[159] = {
 /* --------------------------------------------------------------- state */
 
 
-static uint8_t analog_on;          /* the booster is up and kept up */
+static uint8_t analog_on;          // the booster is up 
 static uint8_t s_dc_black = EPD_DC_BLACK;
 static uint8_t s_dc_white = EPD_DC_WHITE;
 static uint8_t s_fast_frames = EPD_FAST_FRAMES;
 
 /* 每像素净驱动帧数：正数 = 黑方向，负数 = 白方向，限制在 [-7,+7]。
- * 4 bit 有符号补码（-8..+7），两个像素共用 1 字节。
- * 这是 epd_fast_net.c 的 net 算法：不再保存上一帧目标，而是按目标色
- * 和当前净驱动量决定本帧是否继续驱动。 */
+ * 4 bit 有符号补码（-8..+7），两个像素共用 1 字节。 */
 #define EPD_NET_BYTES    (EPD_PIXELS / 2u)
 #define EPD_MAX_PULSE    7u
 
-static uint8_t s_net[EPD_NET_BYTES];
+/* 后面会按 32-bit 读取 4 个 net 字节，保证 4 字节对齐。 */
+static uint8_t s_net[EPD_NET_BYTES] __attribute__((aligned(4)));
 
-/* 掩码双缓冲：DMA 发送 A 的同时 CPU 生成 B，下一块发 B 的同时 CPU 生成 A。
- * 两块都是 512 字节，整帧 2888 字节约需 6 块；块间只等待 DMA TC，
- * 不等待 SPI BSY，因此 SPI 不会在块边界长时间停顿。 */
-#define EPD_PLANE_CHUNK   512u
+/* 掩码双缓冲改为 2 x 64 字节。 */
+#define EPD_PLANE_CHUNK   64u
 static uint8_t s_plane_buf[2][EPD_PLANE_CHUNK] __attribute__((aligned(4)));
+
+/* 上电时生成：[plane][net_pair_byte] -> 两个像素是否达到本方向驱动阈值。
+ * 返回值的 bit0/bit1 分别对应 net 字节里的低/高 nibble。
+ * plane 0 = 黑方向，plane 1 = 白方向。 */
+static uint8_t s_mask_lut[2][256];
+
+/* 检测“本帧是否存在需要驱动的像素”时使用的循环探测位置（帧字节下标）。 */
+static uint32_t s_probe_pos;
 
 static uint32_t s_scan_count;   /* fast scans since the last full refresh */
 static uint8_t  s_pending;      /* 已经激活、面板还在刷 */
@@ -443,12 +419,118 @@ static uint8_t  s_row0, s_row1; /* 本帧要发的行范围（局部刷新用）
 static uint8_t  s_col0, s_col1; /* 本帧要发的列范围（字节列 0..18） */
 static uint8_t s_hold_pending;  /* a scan drove something and still needs its HOLD ending */
 
-/* net 算法不根据上一帧目标判断变化，开始快刷时只需把净驱动量清零。 */
+/* 4 bit 有符号 nibble 转 int（查表和掩码计算共用）。 */
+static inline int epd_signed_nibble(uint8_t v)
+{
+    v &= 0x0Fu;
+    return (v & 0x08u) ? ((int)v - 16) : (int)v;
+}
+
+/* 上电/预算变化时重建查表。 */
+static void epd_build_mask_lut(void)
+{
+    const int hi_black = (int)s_dc_black - (int)s_fast_frames;
+    const int lo_white = -(int)s_dc_white + (int)s_fast_frames;
+
+    for (uint16_t v = 0; v < 256u; ++v) {
+        const int n0 = epd_signed_nibble((uint8_t)v);
+        const int n1 = epd_signed_nibble((uint8_t)(v >> 4));
+        uint8_t black_ok = 0;
+        uint8_t white_ok = 0;
+
+        if (n0 <= hi_black) {
+            black_ok |= 0x01u;
+        }
+        if (n1 <= hi_black) {
+            black_ok |= 0x02u;
+        }
+        if (n0 >= lo_white) {
+            white_ok |= 0x01u;
+        }
+        if (n1 >= lo_white) {
+            white_ok |= 0x02u;
+        }
+
+        s_mask_lut[0][v] = black_ok;
+        s_mask_lut[1][v] = white_ok;
+    }
+}
+
+/* 输入 4 个 net 字节（共 8 像素），输出 8 bit 驱动条件掩码。
+ * 结果还要再与目标颜色按位与，才会得到真正的黑/白平面。 */
+static inline uint8_t epd_drive_mask_byte(const uint8_t *cell, uint8_t plane)
+{
+    const uint8_t p0 = s_mask_lut[plane][cell[0]];
+    const uint8_t p1 = s_mask_lut[plane][cell[1]];
+    const uint8_t p2 = s_mask_lut[plane][cell[2]];
+    const uint8_t p3 = s_mask_lut[plane][cell[3]];
+
+    return (uint8_t)(((p0 & 0x01u) << 7) | (((p0 >> 1) & 0x01u) << 6) |
+                     ((p1 & 0x01u) << 5) | (((p1 >> 1) & 0x01u) << 4) |
+                     ((p2 & 0x01u) << 3) | (((p2 >> 1) & 0x01u) << 2) |
+                     ((p3 & 0x01u) << 1) |  ((p3 >> 1) & 0x01u));
+}
+
+/* 快速判断一个帧字节（8 像素）里是否有像素需要驱动。
+ * 32-bit 全饱和跳过：
+ *   - 全黑目标 0x00 + 8 个 net nibble 全为 +7 -> 不驱动
+ *   - 全白目标 0xFF + 8 个 net nibble 全为 -7 -> 不驱动
+ * 注意全白目标配合 +7（0x77777777）仍需要向白驱动，不能跳过。 */
+static inline int epd_frame_byte_needs_drive(const uint8_t *next, uint32_t frame_index)
+{
+    const uint8_t px = next[frame_index];
+    const uint8_t *const cell = &s_net[frame_index * 4u];
+    uint32_t net_word;
+
+    memcpy(&net_word, cell, sizeof(net_word));
+    if ((px == 0x00u) && (net_word == 0x77777777u)) {
+        return 0;
+    }
+    if ((px == 0xFFu) && (net_word == 0x99999999u)) {
+        return 0;
+    }
+
+    {
+        const uint8_t black = (uint8_t)(epd_drive_mask_byte(cell, 0u) & (uint8_t)~px);
+        const uint8_t white = (uint8_t)(epd_drive_mask_byte(cell, 1u) & px);
+
+        return (uint8_t)(black | white) != 0u;
+    }
+}
+
+/* 清零净驱动量，并复位探测游标。 */
 static void epd_net_clear(void)
 {
     for (uint32_t i = 0; i < EPD_NET_BYTES; ++i) {
         s_net[i] = 0;
     }
+    s_probe_pos = 0;
+}
+
+/* 全刷已经把整帧真正显示到面板上。此时把 net 直接设到对应方向的饱和值：
+ *   - 目标黑：net = +dc_black
+ *   - 目标白：net = -dc_white
+ * 这样下一帧如果目标没有变化，就不会再向同方向重复驱动。 */
+static void epd_net_set_from_image(const uint8_t *image)
+{
+    const uint8_t black_nibble = (uint8_t)((int)s_dc_black & 0x0F);
+    const uint8_t white_nibble = (uint8_t)((-(int)s_dc_white) & 0x0F);
+
+    for (uint32_t i = 0; i < EPD_FRAME_BYTES; ++i) {
+        const uint8_t v = image[i];
+        uint8_t *const cell = &s_net[i * 4u];
+
+        for (uint8_t b = 0; b < 4u; ++b) {
+            const uint8_t m0 = (uint8_t)(0x80u >> (b * 2u));
+            const uint8_t m1 = (uint8_t)(0x40u >> (b * 2u));
+            const uint8_t n0 = ((v & m0) != 0u) ? white_nibble : black_nibble;
+            const uint8_t n1 = ((v & m1) != 0u) ? white_nibble : black_nibble;
+
+            cell[b] = (uint8_t)(n0 | (uint8_t)(n1 << 4));
+        }
+    }
+
+    s_probe_pos = 0;
 }
 
 /* ------------------------------------------------------------ 等待 BUSY
@@ -536,12 +618,6 @@ static void epd_restore_clock(void)
     SystemCoreClockUpdate();
 }
 
-/* 低功耗等待：时基改用 LSI/RTC 后 SysTick 空闲，这里保持软件延时。 */
-void EPD_SleepUs(uint32_t us)
-{
-    EPD_DelayUs(us);
-}
-
 /* 等 BUSY 落下：进 STOP 睡眠，BUSY 下降沿或 RTC 闹钟唤醒。
  * timeout_s 单位：秒；RTC 每 0.5 s 计一个 tick，闹钟直接用计数器值比较。 */
 static void epd_wait(uint32_t timeout_s)
@@ -554,8 +630,6 @@ static void epd_wait(uint32_t timeout_s)
         return;
     }
 
-    /* uint32 加法自然回绕：计数器接近 0xFFFFFFFF 时，deadline 会变成
-     * 溢出后的小值，等 CNT 回绕到 0 再递增即可命中。 */
     deadline = RTC_GetCounter() + timeout_s * EPD_RTC_HZ;
 
     while (BUSY()) {
@@ -572,26 +646,20 @@ static void epd_wait(uint32_t timeout_s)
 
         /* 闹钟直接写 deadline；只要 now < deadline 就至少还有 1 个 tick
          * (0.5 s) 的余量，不会因为设置耗时错过。 */
-        RTC_SetAlarm(deadline);
-        RTC_WaitForLastTask();
-        RTC_ClearITPendingBit(RTC_IT_ALR);
-        EXTI_ClearITPendingBit(EXTI_Line17);
-        EXTI_ClearITPendingBit(EPD_BUSY_EXTI_LINE);
-        NVIC_ClearPendingIRQ(RTCAlarm_IRQn);
-        NVIC_ClearPendingIRQ(EPD_BUSY_IRQn);
 
+        RTC_ClearITPendingBit(RTC_IT_ALR);
+        NVIC_ClearPendingIRQ(RTCAlarm_IRQn);
         /* 清挂起位到进 STOP 之间 BUSY 可能已经落下，再确认一次 */
         if (!BUSY()) {
             break;
         }
-
+        RTC_SetAlarm(deadline);
         PWR_EnterSTOPMode(PWR_Regulator_LowPower, PWR_STOPEntry_WFI);
         epd_restore_clock();
     }
 
     /* 正常结束后把闹钟移到很远，避免后续误触发 */
     RTC_SetAlarm(0xFFFFFFFFu);
-    RTC_WaitForLastTask();
 }
 
 /* -------------------------------------------------------------- helpers */
@@ -774,19 +842,25 @@ void EPD_SendDisplay(const uint8_t *image)
     EPD_Cmd(0x22);
     EPD_Dat(0xC7);
     EPD_Cmd(0x20);
-    epd_wait(EPD_BUSY_POLLS_LONG);      /* 全刷一次约 1.3 秒 */
+    epd_wait(EPD_BUSY_POLLS_LONG);      
     if (!BUSY()) {
         analog_on = 0;      /* the full sequence powers down by itself */
-        epd_net_clear();
+        if (image != 0) {
+            epd_net_set_from_image(image);
+        } 
         s_hold_pending = 0;
     }
 }
 
 void EPD_FastPrepareFrames(uint8_t frames)
 {
-    static uint8_t scratch[159];
+    uint8_t scratch[159]; //in stack
+
+    //todo: remove the frame setting. All we need is 1 frame and we can change
+    //the lut's framerate setting to change driving time.
 
     s_fast_frames = (frames != 0u) ? frames : 1u;
+    epd_build_mask_lut();
     for (uint16_t i = 0; i < 159u; ++i) {
         scratch[i] = lut_fast_base[i];
     }
@@ -801,7 +875,7 @@ void EPD_FastPrepareFrames(uint8_t frames)
         scratch[68] = 1;
     }
 
-    epd_reset();            /* hardware reset only: the partial path skips 0x12 */
+    epd_reset();           // hardware reset
     if (BUSY()) {
         return;
     }
@@ -820,7 +894,7 @@ void EPD_FastPrepareFrames(uint8_t frames)
         return;
     }
 
-    EPD_Cmd(0x37);          /* no automatic RAM ping-pong */
+    EPD_Cmd(0x37);          // no RAM ping-pong
     for (uint8_t i = 0; i < 10u; ++i) {
         EPD_Dat(0x00);
     }
@@ -828,7 +902,7 @@ void EPD_FastPrepareFrames(uint8_t frames)
     EPD_Cmd(0x3C);
     EPD_Dat(0x80);
 
-    epd_analog_on();        /* power up once and keep it up */
+    epd_analog_on();        //turns on analog (boost circuit of the EPD) withou turning it off.
 }
 
 void EPD_FastPrepare(void)
@@ -836,7 +910,7 @@ void EPD_FastPrepare(void)
     EPD_FastPrepareFrames(EPD_FAST_FRAMES);
 }
 
-/* 与 budget 驱动共用接口；这里表示黑/白方向一次变化后的最大预驱动帧数。 */
+
 void EPD_SetPulseBudget(uint8_t black, uint8_t white)
 {
     /* 3 bit 计数最大为 7；0 仍按 1 处理。 */
@@ -852,6 +926,7 @@ void EPD_SetPulseBudget(uint8_t black, uint8_t white)
     }
     s_dc_black = black;
     s_dc_white = white;
+    epd_build_mask_lut();
 }
 
 // 传入一帧并刷新
@@ -876,114 +951,101 @@ void EPD_FastScan(const uint8_t *black, const uint8_t *white)
     epd_wait(EPD_BUSY_POLLS_SCAN);
 }
 
-/* 4 bit 有符号 nibble 转 int。 */
-static inline int epd_signed_nibble(uint8_t v)
+
+//only needs to find if there's pixels that needs driving. Usually faster than going
+//through the entire display buffer and figure out display window.
+static int epd_probe_for_drive(const uint8_t *next, uint8_t *r0, uint8_t *r1)
 {
-    v &= 0x0Fu;
-    return (v & 0x08u) ? ((int)v - 16) : (int)v;
-}
+    uint32_t start = s_probe_pos;
+    uint32_t found = EPD_FRAME_BYTES;
 
-/* epd_fast_net.c 的核心逻辑：按目标颜色和当前净驱动量决定本帧是否驱动。
- * 目标黑要求 net <= dc_black - frames；目标白要求 net >= -dc_white + frames。 */
-static int epd_plan_frame(const uint8_t *next, uint8_t *r0, uint8_t *r1)
-{
-    const int hi_black = (int)s_dc_black - (int)s_fast_frames;
-    const int lo_white = -(int)s_dc_white + (int)s_fast_frames;
-    uint8_t first = EPD_H;
-    uint8_t last = 0;
-    int driven = 0;
+    if (start >= EPD_FRAME_BYTES) {
+        start = 0;
+    }
 
-    for (uint32_t row = 0; row < EPD_H; ++row) {
-        const uint8_t *const nextrow = &next[row * EPD_STRIDE];
-        int any = 0;
-
-        for (uint32_t k = 0; k < EPD_STRIDE; ++k) {
-            const uint8_t px = nextrow[k];
-            const uint8_t *const cell = &s_net[(row * EPD_STRIDE + k) * 4u];
-
-            for (uint8_t b = 0; b < 4u; ++b) {
-                const uint8_t m0 = (uint8_t)(0x80u >> (b * 2u));
-                const uint8_t m1 = (uint8_t)(0x40u >> (b * 2u));
-                const uint8_t nb = cell[b];
-                const int n0 = epd_signed_nibble(nb);
-                const int n1 = epd_signed_nibble((uint8_t)(nb >> 4));
-                const uint8_t w0 = ((px & m0) != 0u) ? 1u : 0u;
-                const uint8_t w1 = ((px & m1) != 0u) ? 1u : 0u;
-
-                if ((w0 != 0u) ? (n0 >= lo_white) : (n0 <= hi_black)) {
-                    any = 1;
-                }
-                if ((w1 != 0u) ? (n1 >= lo_white) : (n1 <= hi_black)) {
-                    any = 1;
-                }
-            }
-        }
-
-        if (any != 0) {
-            if (row < first) {
-                first = (uint8_t)row;
-            }
-            last = (uint8_t)row;
-            driven = 1;
+    for (uint32_t p = start; p < EPD_FRAME_BYTES; ++p) {
+        if (epd_frame_byte_needs_drive(next, p)) {
+            found = p;
+            break;
         }
     }
 
-    *r0 = first;
-    *r1 = last;
-    return driven;
+    if (found == EPD_FRAME_BYTES) {
+        for (uint32_t p = 0; p < start; ++p) {
+            if (epd_frame_byte_needs_drive(next, p)) {
+                found = p;
+                break;
+            }
+        }
+    }
+
+    if (found == EPD_FRAME_BYTES) {
+        *r0 = EPD_H;
+        *r1 = 0;
+        return 0;
+    }
+
+    // 下次仍然从这个像素位置附近开始探测
+    s_probe_pos = found;
+    *r0 = 0;
+    *r1 = (uint8_t)(EPD_H - 1);
+    return 1;
 }
 
-/* 面板刷完后，按实际驱动方向更新净驱动帧数。 */
+/* 面板刷完后，按实际驱动方向更新净驱动帧数。
+ * 驱动阈值已经保证 nibble 加减不会越过 [-7,+7]，所以直接做 4 bit
+ * 无符号模运算即可，不需要 nibble -> int 再转回 nibble。 */
 static void epd_apply_charge(const uint8_t *next)
 {
-    const int frames = (int)s_fast_frames;
-    const int hi_black = (int)s_dc_black - frames;
-    const int lo_white = -(int)s_dc_white + frames;
+    const uint8_t frames = s_fast_frames;
 
     for (uint32_t i = 0; i < EPD_FRAME_BYTES; ++i) {
         const uint8_t px = next[i];
         uint8_t *const cell = &s_net[i * 4u];
+        const uint8_t black = (uint8_t)(epd_drive_mask_byte(cell, 0u) & (uint8_t)~px);
+        const uint8_t white = (uint8_t)(epd_drive_mask_byte(cell, 1u) & px);
+        const uint8_t active = (uint8_t)(black | white);
+
+        if (active == 0u) {
+            continue;
+        }
 
         for (uint8_t b = 0; b < 4u; ++b) {
             const uint8_t m0 = (uint8_t)(0x80u >> (b * 2u));
             const uint8_t m1 = (uint8_t)(0x40u >> (b * 2u));
-            const uint8_t nb = cell[b];
-            int n0 = epd_signed_nibble(nb);
-            int n1 = epd_signed_nibble((uint8_t)(nb >> 4));
-            const uint8_t w0 = ((px & m0) != 0u) ? 1u : 0u;
-            const uint8_t w1 = ((px & m1) != 0u) ? 1u : 0u;
 
-            if (w0 != 0u) {
-                if (n0 >= lo_white) {
-                    n0 -= frames;
-                }
-            } else if (n0 <= hi_black) {
-                n0 += frames;
+            if ((active & (m0 | m1)) == 0u) {
+                continue;
             }
 
-            if (w1 != 0u) {
-                if (n1 >= lo_white) {
-                    n1 -= frames;
-                }
-            } else if (n1 <= hi_black) {
-                n1 += frames;
-            }
+            {
+                const uint8_t nb = cell[b];
+                uint8_t n0 = (uint8_t)(nb & 0x0Fu);
+                uint8_t n1 = (uint8_t)(nb >> 4);
 
-            cell[b] = (uint8_t)(((uint8_t)n0 & 0x0Fu) |
-                                (uint8_t)(((uint8_t)n1 & 0x0Fu) << 4));
+                if ((black & m0) != 0u) {
+                    n0 = (uint8_t)((n0 + frames) & 0x0Fu);
+                } else if ((white & m0) != 0u) {
+                    n0 = (uint8_t)((n0 - frames) & 0x0Fu);
+                }
+
+                if ((black & m1) != 0u) {
+                    n1 = (uint8_t)((n1 + frames) & 0x0Fu);
+                } else if ((white & m1) != 0u) {
+                    n1 = (uint8_t)((n1 - frames) & 0x0Fu);
+                }
+
+                cell[b] = (uint8_t)(n0 | (uint8_t)(n1 << 4));
+            }
         }
     }
 }
 
-/* 生成一小块平面数据。frame_offset 是整帧里的字节偏移，plane=0 发黑平面，
- * plane=1 发白平面；all_zero 用于 HOLD 收尾的全 0 掩码。 */
+/* 生成一小块平面数据。plane=0 发黑平面，plane=1 发白平面；
+ * all_zero 用于 HOLD 收尾的全 0 掩码。 */
 static void epd_build_plane_chunk(uint8_t *dst, uint32_t frame_offset, uint32_t len,
                                   const uint8_t *next, uint8_t plane, uint8_t all_zero)
 {
-    const int hi_black = (int)s_dc_black - (int)s_fast_frames;
-    const int lo_white = -(int)s_dc_white + (int)s_fast_frames;
-    const uint8_t want_white = (plane != 0u) ? 1u : 0u;
-
     if (all_zero != 0u) {
         for (uint32_t i = 0; i < len; ++i) {
             dst[i] = 0x00;
@@ -995,44 +1057,40 @@ static void epd_build_plane_chunk(uint8_t *dst, uint32_t frame_offset, uint32_t 
         const uint32_t frame_index = frame_offset + i;
         const uint8_t px = next[frame_index];
         const uint8_t *const cell = &s_net[frame_index * 4u];
-        uint8_t out = 0;
+        uint32_t net_word;
 
-        for (uint8_t b = 0; b < 4u; ++b) {
-            const uint8_t m0 = (uint8_t)(0x80u >> (b * 2u));
-            const uint8_t m1 = (uint8_t)(0x40u >> (b * 2u));
-            const uint8_t nb = cell[b];
-            const int n0 = epd_signed_nibble(nb);
-            const int n1 = epd_signed_nibble((uint8_t)(nb >> 4));
-            const uint8_t w0 = ((px & m0) != 0u) ? 1u : 0u;
-            const uint8_t w1 = ((px & m1) != 0u) ? 1u : 0u;
-
-            if ((w0 == want_white) &&
-                ((w0 != 0u) ? (n0 >= lo_white) : (n0 <= hi_black))) {
-                out |= m0;
-            }
-            if ((w1 == want_white) &&
-                ((w1 != 0u) ? (n1 >= lo_white) : (n1 <= hi_black))) {
-                out |= m1;
-            }
+        /* 该平面没有目标像素时直接清零。 */
+        if (((plane == 0u) && (px == 0xFFu)) ||
+            ((plane != 0u) && (px == 0x00u))) {
+            dst[i] = 0x00;
+            continue;
         }
 
-        dst[i] = out;
+        memcpy(&net_word, cell, sizeof(net_word));
+
+        //skip if it's all white or all black.
+        if ((plane == 0u) && (net_word == 0x77777777u)) {
+            dst[i] = 0x00;     //all black 
+            continue;
+        }
+        if ((plane != 0u) && (net_word == 0x99999999u)) {
+            dst[i] = 0x00;      //all white
+            continue;
+        }
+
+        {
+            const uint8_t drive = epd_drive_mask_byte(cell, plane);
+            const uint8_t target = (plane == 0u) ? (uint8_t)~px : px;
+
+            dst[i] = (uint8_t)(drive & target);
+        }
     }
 }
 
-/* 按窗口把一张由状态表实时生成的平面送给面板。
- *
- * 双缓冲流水：
- *   1. 生成长度为 L 的 A 块并启动 DMA；
- *   2. DMA 发 A 时，CPU 生成下一块 B；
- *   3. 等 A 的 DMA TC 后立刻启动 B；
- *   4. DMA 发 B 时，CPU 生成下一块 A，如此循环。
- *
- * 块之间不等待 SPI BSY，只等 DMA TC，所以计算时间被隐藏在传输期间。 */
+//generate mask plane and send
+// A/B buffer, almost as fast as an entire transfer.
 static void epd_send_generated_plane(uint8_t cmd, uint8_t plane,
                                      const uint8_t *next,
-                                     uint8_t row0, uint8_t row1,
-                                     uint8_t col0, uint8_t col1,
                                      uint8_t all_zero)
 {
     uint32_t first;
@@ -1041,14 +1099,12 @@ static void epd_send_generated_plane(uint8_t cmd, uint8_t plane,
     uint32_t cur_len;
     uint8_t cur;
 
-    if (row1 < row0) {
-        return;
-    }
 
-    first = (uint32_t)row0 * EPD_STRIDE;
-    total = (uint32_t)(row1 - row0 + 1u) * EPD_STRIDE;
 
-    epd_window(row0, row1, col0, col1);
+    first = 0;
+    total = EPD_W * EPD_STRIDE;
+
+
     EPD_Cmd(cmd);
     DC_H();
     CS_L();
@@ -1082,11 +1138,10 @@ static void epd_send_generated_plane(uint8_t cmd, uint8_t plane,
     CS_H();
 }
 
-static void epd_send_planes(const uint8_t *next, uint8_t row0, uint8_t row1,
-                            uint8_t col0, uint8_t col1)
+static void epd_send_planes(const uint8_t *next)
 {
-    epd_send_generated_plane(0x26, 0u, next, row0, row1, col0, col1, 0u);
-    epd_send_generated_plane(0x24, 1u, next, row0, row1, col0, col1, 0u);
+    epd_send_generated_plane(0x26, 0u, next, 0u);
+    epd_send_generated_plane(0x24, 1u, next, 0u);
 }
 
 /* 等面板把已经激活的那一帧刷完。
@@ -1117,9 +1172,13 @@ static void epd_activate(void)
 
 void EPD_FastBegin(const uint8_t *shown)
 {
-    /* net 算法不保存上一帧目标；全刷后 net 已经清零，这里再保证一次。 */
-    (void)shown;
-    epd_net_clear();
+    /* shown 是当前面板上已经显示的一帧。按它初始化饱和 net，
+     * 使下一帧相同像素不再被重复驱动。 */
+    if (shown != 0) {
+        epd_net_set_from_image(shown);
+    } else {
+        epd_net_clear();
+    }
     s_scan_count = 0;
     s_hold_pending = 0;
     s_pending = 0;
@@ -1151,12 +1210,10 @@ int EPD_FastFrame(const uint8_t *next)
     // 阶段清零，每隔一段时间全刷 
     if ((EPD_CLEAN_INTERVAL != 0) && (s_scan_count >= (uint32_t)EPD_CLEAN_INTERVAL)) {
         PRINT("[EPD] clean refresh after %u fast scans\r\n", (unsigned)s_scan_count);
-        /* 只看本次全刷是否超时：历史超时标志若一直留着，这里每次都会判失败，
-         * s_scan_count 就永远清不掉，于是每帧都来一次全刷。 */
         s_busy_timeout = 0;
         EPD_SendDisplay(next);
         if (s_busy_timeout) {
-            s_scan_count = 0;    /* 本次失败也退出 clean，避免每帧重试全刷 */
+            s_scan_count = 0;  
             return -1;
         }
         EPD_FastBegin(next);
@@ -1164,12 +1221,9 @@ int EPD_FastFrame(const uint8_t *next)
         return s_busy_timeout ? -1 : 1;
     }
 
-    /* 无驱动时只写局部行号，保留上一次有效范围供 HOLD 收尾使用。 */
-    driven = epd_plan_frame(next, &row0, &row1);
+    // 全屏模式只需找到一个需要驱动的像素即可
+    driven = epd_probe_for_drive(next, &row0, &row1);
 
-    /* 列范围固定整行（0..18）。列也缩小范围AI没搞出来。
-    不过之前light ink做到过，所以肯定是有办法的
-    不过这个只影响写入RAM的速度，作用不算很大，不浪费时间了 */
     s_col0 = 0;
     s_col1 = (uint8_t)(EPD_STRIDE - 1);
 
@@ -1183,11 +1237,9 @@ int EPD_FastFrame(const uint8_t *next)
         s_row1 = row1;
 
         //把待刷新的数据写入EPD中
-#if EPD_PARTIAL_WINDOW
-        epd_send_planes(next, s_row0, s_row1, s_col0, s_col1);    /* 只发变化的行 */
-#else
-        epd_send_planes(next, 0, (uint8_t)(EPD_H - 1), 0, (uint8_t)(EPD_STRIDE - 1));
-#endif
+
+        epd_send_planes(next);
+
         //刷新动作就是这个函数。触发刷新之后对像素预算进行处理就很快返回了。如果单核的话此时主循环就可以去算下一帧。
         epd_activate();
 
@@ -1197,15 +1249,14 @@ int EPD_FastFrame(const uint8_t *next)
         /* 这一帧已经交给面板了，更新每像素净驱动帧数。 */
         epd_apply_charge(next);
     } else if (EPD_HOLD_ENDING && s_hold_pending) {
-        /* HOLD 收尾：沿用上一次真正发过的行范围，两块全 0 掩码，所有像素都不驱动，
-         * 让上一次的驱动把波形走完而不是停在半途。 */
+        // if no pixel is driven then hold the screen by discharging
         if (s_row1 >= s_row0) {
             EPD_FastSync();          /* 等上一帧刷完 */
             if (s_pending) {
                 return -1;
             }
-            epd_send_generated_plane(0x26, 0u, next, s_row0, s_row1, s_col0, s_col1, 1u);
-            epd_send_generated_plane(0x24, 1u, next, s_row0, s_row1, s_col0, s_col1, 1u);
+            epd_send_generated_plane(0x26, 0u, next,1u);
+            epd_send_generated_plane(0x24, 1u, next,1u);
             epd_activate();          /* 全 HOLD 的一帧，同样不等它刷 */
 
             ++s_scan_count;
