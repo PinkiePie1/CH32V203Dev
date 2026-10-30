@@ -63,9 +63,10 @@ void EPD_SetPulseBudget(uint8_t black, uint8_t white);
  * two masks must not overlap. */
 void EPD_FastScan(const uint8_t *black, const uint8_t *white);
 
-/* Clear the accumulated net drive state before starting fast updates.
- * The net algorithm does not use the `shown` image; the parameter is kept for
- * API compatibility with the previous driver.
+/* Initialize the net drive state from the frame currently shown on the panel.
+ * After a full refresh, call this with that same frame so pixels whose target
+ * did not change are already saturated and will not be driven again.
+ * Passing NULL clears the net state.
  * EPD_FastFrame returns 1 if it actually drove, 0 for a HOLD-only call, or -1
  * when a panel timeout prevented progress.
  *

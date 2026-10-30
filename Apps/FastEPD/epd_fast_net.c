@@ -534,12 +534,38 @@ static inline int epd_frame_byte_needs_drive(const uint8_t *next, uint32_t frame
     }
 }
 
-/* net 算法开始快刷时只需把净驱动量清零，同时复位探测游标。 */
+/* 清零净驱动量，并复位探测游标。 */
 static void epd_net_clear(void)
 {
     for (uint32_t i = 0; i < EPD_NET_BYTES; ++i) {
         s_net[i] = 0;
     }
+    s_probe_pos = 0;
+}
+
+/* 全刷已经把整帧真正显示到面板上。此时把 net 直接设到对应方向的饱和值：
+ *   - 目标黑：net = +dc_black
+ *   - 目标白：net = -dc_white
+ * 这样下一帧如果目标没有变化，就不会再向同方向重复驱动。 */
+static void epd_net_set_from_image(const uint8_t *image)
+{
+    const uint8_t black_nibble = (uint8_t)((int)s_dc_black & 0x0F);
+    const uint8_t white_nibble = (uint8_t)((-(int)s_dc_white) & 0x0F);
+
+    for (uint32_t i = 0; i < EPD_FRAME_BYTES; ++i) {
+        const uint8_t v = image[i];
+        uint8_t *const cell = &s_net[i * 4u];
+
+        for (uint8_t b = 0; b < 4u; ++b) {
+            const uint8_t m0 = (uint8_t)(0x80u >> (b * 2u));
+            const uint8_t m1 = (uint8_t)(0x40u >> (b * 2u));
+            const uint8_t n0 = ((v & m0) != 0u) ? white_nibble : black_nibble;
+            const uint8_t n1 = ((v & m1) != 0u) ? white_nibble : black_nibble;
+
+            cell[b] = (uint8_t)(n0 | (uint8_t)(n1 << 4));
+        }
+    }
+
     s_probe_pos = 0;
 }
 
@@ -869,7 +895,11 @@ void EPD_SendDisplay(const uint8_t *image)
     epd_wait(EPD_BUSY_POLLS_LONG);      /* 全刷一次约 1.3 秒 */
     if (!BUSY()) {
         analog_on = 0;      /* the full sequence powers down by itself */
-        epd_net_clear();
+        if (image != 0) {
+            epd_net_set_from_image(image);
+        } else {
+            epd_net_clear();
+        }
         s_hold_pending = 0;
     }
 }
@@ -1239,9 +1269,13 @@ static void epd_activate(void)
 
 void EPD_FastBegin(const uint8_t *shown)
 {
-    /* net 算法不保存上一帧目标；全刷后 net 已经清零，这里再保证一次。 */
-    (void)shown;
-    epd_net_clear();
+    /* shown 是当前面板上已经显示的一帧。按它初始化饱和 net，
+     * 使下一帧相同像素不再被重复驱动。 */
+    if (shown != 0) {
+        epd_net_set_from_image(shown);
+    } else {
+        epd_net_clear();
+    }
     s_scan_count = 0;
     s_hold_pending = 0;
     s_pending = 0;

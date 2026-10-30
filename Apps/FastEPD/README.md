@@ -64,7 +64,7 @@ make flash        # 需要 minichlink 和已连接的开发板
 
 ```
 RAM: 16340 B / 20 KB (约 79.8%)
-FLASH: 24048 B / 64 KB (约 36.7%)
+FLASH: 24380 B / 64 KB (约 37.2%)
 ```
 
 静态 RAM 约占 15.0 KB，剩余约 4.0 KB 给栈和后续应用使用。
@@ -72,6 +72,9 @@ FLASH: 24048 B / 64 KB (约 36.7%)
 ## 与旧驱动的接口差异
 
 - 快刷算法来自 `epd_fast_net.c`，不再保存上一帧目标。
-- `EPD_FastBegin(shown)` 仍然保留接口，但 net 算法会忽略 `shown`，只清空净驱动状态。
+- `EPD_FastBegin(shown)` 现在会用 `shown` 初始化 net：
+  - 黑色像素设为 `+EPD_DC_BLACK`
+  - 白色像素设为 `-EPD_DC_WHITE`
+  这样紧接着的下一帧如果目标没变，不会再次驱动；传 `NULL` 时仍然全部清零。
 - `EPD_SetPulseBudget()` 的绝对值上限为 7，与 4 bit 有符号 nibble 的表示范围匹配。
 - 其余公开 API、图片格式和刷新流程保持不变。
