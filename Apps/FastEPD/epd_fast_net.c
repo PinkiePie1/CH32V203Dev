@@ -1078,10 +1078,11 @@ static int epd_probe_for_drive(const uint8_t *next, uint8_t *r0, uint8_t *r1)
 #endif
 
 /* 面板刷完后，按实际驱动方向更新净驱动帧数。
- * 先用查表得到黑/白平面，再只更新掩码中实际置位的像素。 */
+ * 驱动阈值已经保证 nibble 加减不会越过 [-7,+7]，所以直接做 4 bit
+ * 无符号模运算即可，不需要 nibble -> int 再转回 nibble。 */
 static void epd_apply_charge(const uint8_t *next)
 {
-    const int frames = (int)s_fast_frames;
+    const uint8_t frames = s_fast_frames;
 
     for (uint32_t i = 0; i < EPD_FRAME_BYTES; ++i) {
         const uint8_t px = next[i];
@@ -1104,23 +1105,22 @@ static void epd_apply_charge(const uint8_t *next)
 
             {
                 const uint8_t nb = cell[b];
-                int n0 = epd_signed_nibble(nb);
-                int n1 = epd_signed_nibble((uint8_t)(nb >> 4));
+                uint8_t n0 = (uint8_t)(nb & 0x0Fu);
+                uint8_t n1 = (uint8_t)(nb >> 4);
 
                 if ((black & m0) != 0u) {
-                    n0 += frames;
+                    n0 = (uint8_t)((n0 + frames) & 0x0Fu);
                 } else if ((white & m0) != 0u) {
-                    n0 -= frames;
+                    n0 = (uint8_t)((n0 - frames) & 0x0Fu);
                 }
 
                 if ((black & m1) != 0u) {
-                    n1 += frames;
+                    n1 = (uint8_t)((n1 + frames) & 0x0Fu);
                 } else if ((white & m1) != 0u) {
-                    n1 -= frames;
+                    n1 = (uint8_t)((n1 - frames) & 0x0Fu);
                 }
 
-                cell[b] = (uint8_t)(((uint8_t)n0 & 0x0Fu) |
-                                    (uint8_t)(((uint8_t)n1 & 0x0Fu) << 4));
+                cell[b] = (uint8_t)(n0 | (uint8_t)(n1 << 4));
             }
         }
     }
