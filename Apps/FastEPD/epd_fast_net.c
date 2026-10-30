@@ -76,7 +76,7 @@
 #define EPD_DMA_TC_FLAG     DMA1_FLAG_TC3
 #define EPD_DMA_TC_READY()  (DMA_GetFlagStatus(EPD_DMA_TC_FLAG) != RESET)
 #define EPD_DMA_TC_CLEAR()  DMA_ClearFlag(EPD_DMA_TC_FLAG)
-#define EPD_DMA_MIN_LEN     256                               // 超过这个长度才走 DMA
+#define EPD_DMA_MIN_LEN     256                               // 超过这个长度才走DMA
 
 /* 软件延时：144 MHz 下约 27 个空循环 / us。 */
 #define EPD_DELAY_LOOPS_PER_MS  27000u
@@ -150,13 +150,10 @@ static void epd_dma_start(const uint8_t *buf, uint32_t len)
     EPD_DMA_TC_CLEAR();
     EPD_DMA_CHANNEL->MADDR = (uint32_t)buf;
     DMA_SetCurrDataCounter(EPD_DMA_CHANNEL, (uint16_t)len);
-    /* 保证 CPU 对缓冲区的写入在 DMA 使能前已经完成。 */
-    __asm__ volatile ("" ::: "memory");
     DMA_Cmd(EPD_DMA_CHANNEL, ENABLE);
 }
 
-/* 等当前 DMA 块传完。这里只等 DMA TC，不等 SPI BSY：立刻启动下一块，
- * 让 SPI 的移位寄存器始终保持有数据可发。 */
+// 等当前 DMA 块传完。这里只等 DMA TC
 static void epd_dma_wait_tc(const uint8_t *buf, uint32_t len)
 {
     uint32_t guard = 2000000u;
@@ -178,7 +175,7 @@ static void epd_dma_wait_tc(const uint8_t *buf, uint32_t len)
     }
 }
 
-/* 一整张平面发完后，才等待移位寄存器清空并清理 DMA/SPI 状态。 */
+//after sending the entire plane, turn off DMA.
 static void epd_spi_wait_idle(void)
 {
     while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_TXE) == RESET) {
@@ -189,7 +186,7 @@ static void epd_spi_wait_idle(void)
     DMA_Cmd(EPD_DMA_CHANNEL, DISABLE);
     EPD_DMA_TC_CLEAR();
 
-    /* SPI传完要读一下接收 */
+    // SPI传完要读一下接收
     (void)SPI1->DATAR;
     (void)SPI1->STATR;
 }
@@ -283,7 +280,7 @@ void EPD_Hal_Init(void)
     SPI_Init(SPI1, &spi);
     SPI_Cmd(SPI1, ENABLE);
 
-    /* DMA：DMA1 通道3 固定映射到 SPI1_TX，无需 DMAMUX */
+    // DMA：DMA1 通道3 固定映射到 SPI1_TX
     RCC_AHBPeriphClockCmd(RCC_AHBPeriph_DMA1, ENABLE);
     {
         DMA_InitTypeDef dma = {0};
@@ -304,12 +301,11 @@ void EPD_Hal_Init(void)
     }
     SPI_I2S_DMACmd(SPI1, SPI_I2S_DMAReq_Tx, ENABLE);
 
-    /* 上电时按当前预算生成掩码/驱动判定查表。 */
+    // 上电时按当前预算生成掩码/驱动判定查表。
     epd_build_mask_lut();
 }
 
-/* BUSY 引脚的 EXTI 中断：只清标志，作用是让 epd_wait() 里的 WFI 醒过来。
- * 真正的判断还在 epd_wait() 里读引脚，所以这里不做任何业务逻辑。 */
+// interrupt handled for BUSY pin
 void EXTI0_IRQHandler(void) __attribute__((interrupt("WCH-Interrupt-fast")));
 void EXTI0_IRQHandler(void)
 {
@@ -337,38 +333,10 @@ void EXTI0_IRQHandler(void)
 #define EPD_CLEAN_INTERVAL  10000   // 每多少次快刷做一次全刷清洁；0 = 关闭
 #define EPD_HOLD_ENDING     1      // 1 = 最后一帧驱动完后补一次全0电平扫描放电。
 
-#define EPD_PIXELS          (EPD_W * EPD_H)   /* 23104 */
+#define EPD_PIXELS          (EPD_W * EPD_H)  
 
 /* ------------------------------------------------------------ waveforms */
 
-/* Full refresh waveform taken from the user's CH572 driver, with the source
- * voltage fields flipped back to the polarity this driver uses. The flip is a
- * swap of the two bit fields 01 (VSH1) and 10 (VSL) in every VS field of the
- * four level rows, see Table 6-6 of the SSD1680 datasheet:
- *
- *   b = ((b & 0x55) << 1) | ((b & 0xAA) >> 1)
- *
- * 00 (VSS, no drive) and 11 (VSH2) are left alone, so untouched phases stay
- * untouched. Its stronger VSH1/VCOM (0x4A / 0x36) is what makes it fast.
- * Layout: 153 byte LUT, then 0x3F/0x03/0x04/0x2C take bytes 153..158. */
- /*
-static const uint8_t lut_full[159] = {
-    0x80,0x99,0x00,0x00,0x00,0x00,0x00,0x00,0x40,0x00,0x00,0x00,
-    0x40,0x99,0x00,0x00,0x00,0x00,0x00,0x00,0x80,0x00,0x00,0x00,
-    0x90,0x99,0x00,0x00,0x00,0x00,0x00,0x00,0x40,0x00,0x00,0x00,
-    0x40,0x99,0x00,0x00,0x00,0x00,0x00,0x00,0x80,0x00,0x00,0x00,
-    0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
-    0x0b,0x01,0x01,0x00,0x00,0x00,0x00,0x05,0x05,0x00,0x03,0x03,
-    0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
-    0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
-    0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
-    0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x0b,0x01,0x01,0x00,
-    0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
-    0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
-    0x33,0x44,0x44,0x45,0x43,0x44,0x00,0x00,0x00,0x22,0x17,0x4a,
-    0x00,0x38,0x36,
-};
-*/
 static const uint8_t lut_full[159] =
 {
 0x80,	0x48,	0x40,	0x0,	0x0,	0x0,	0x0,	0x0,	0x0,	0x0,	0x0,	0x0,
@@ -420,7 +388,7 @@ static const uint8_t lut_fast_base[159] = {
 /* --------------------------------------------------------------- state */
 
 
-static uint8_t analog_on;          /* the booster is up and kept up */
+static uint8_t analog_on;          // the booster is up 
 static uint8_t s_dc_black = EPD_DC_BLACK;
 static uint8_t s_dc_white = EPD_DC_WHITE;
 static uint8_t s_fast_frames = EPD_FAST_FRAMES;
@@ -874,14 +842,12 @@ void EPD_SendDisplay(const uint8_t *image)
     EPD_Cmd(0x22);
     EPD_Dat(0xC7);
     EPD_Cmd(0x20);
-    epd_wait(EPD_BUSY_POLLS_LONG);      /* 全刷一次约 1.3 秒 */
+    epd_wait(EPD_BUSY_POLLS_LONG);      
     if (!BUSY()) {
         analog_on = 0;      /* the full sequence powers down by itself */
         if (image != 0) {
             epd_net_set_from_image(image);
-        } else {
-            epd_net_clear();
-        }
+        } 
         s_hold_pending = 0;
     }
 }
@@ -1125,8 +1091,6 @@ static void epd_build_plane_chunk(uint8_t *dst, uint32_t frame_offset, uint32_t 
 // A/B buffer, almost as fast as an entire transfer.
 static void epd_send_generated_plane(uint8_t cmd, uint8_t plane,
                                      const uint8_t *next,
-                                     uint8_t row0, uint8_t row1,
-                                     uint8_t col0, uint8_t col1,
                                      uint8_t all_zero)
 {
     uint32_t first;
@@ -1135,14 +1099,12 @@ static void epd_send_generated_plane(uint8_t cmd, uint8_t plane,
     uint32_t cur_len;
     uint8_t cur;
 
-    if (row1 < row0) {
-        return;
-    }
 
-    first = (uint32_t)row0 * EPD_STRIDE;
-    total = (uint32_t)(row1 - row0 + 1u) * EPD_STRIDE;
 
-    epd_window(row0, row1, col0, col1);
+    first = 0;
+    total = EPD_W * EPD_STRIDE;
+
+
     EPD_Cmd(cmd);
     DC_H();
     CS_L();
@@ -1176,11 +1138,10 @@ static void epd_send_generated_plane(uint8_t cmd, uint8_t plane,
     CS_H();
 }
 
-static void epd_send_planes(const uint8_t *next, uint8_t row0, uint8_t row1,
-                            uint8_t col0, uint8_t col1)
+static void epd_send_planes(const uint8_t *next)
 {
-    epd_send_generated_plane(0x26, 0u, next, row0, row1, col0, col1, 0u);
-    epd_send_generated_plane(0x24, 1u, next, row0, row1, col0, col1, 0u);
+    epd_send_generated_plane(0x26, 0u, next, 0u);
+    epd_send_generated_plane(0x24, 1u, next, 0u);
 }
 
 /* 等面板把已经激活的那一帧刷完。
@@ -1260,8 +1221,7 @@ int EPD_FastFrame(const uint8_t *next)
         return s_busy_timeout ? -1 : 1;
     }
 
-    /* 全屏模式只需找到第一个需要驱动的像素即可提前退出；
-     * 局部窗口模式需要完整扫描才能得到准确的行范围。 */
+    // 全屏模式只需找到一个需要驱动的像素即可
     driven = epd_probe_for_drive(next, &row0, &row1);
 
     s_col0 = 0;
@@ -1278,7 +1238,7 @@ int EPD_FastFrame(const uint8_t *next)
 
         //把待刷新的数据写入EPD中
 
-        epd_send_planes(next, 0, (uint8_t)(EPD_H - 1), 0, (uint8_t)(EPD_STRIDE - 1));
+        epd_send_planes(next);
 
         //刷新动作就是这个函数。触发刷新之后对像素预算进行处理就很快返回了。如果单核的话此时主循环就可以去算下一帧。
         epd_activate();
@@ -1289,15 +1249,14 @@ int EPD_FastFrame(const uint8_t *next)
         /* 这一帧已经交给面板了，更新每像素净驱动帧数。 */
         epd_apply_charge(next);
     } else if (EPD_HOLD_ENDING && s_hold_pending) {
-        /* HOLD 收尾：沿用上一次真正发过的行范围，两块全 0 掩码，所有像素都不驱动，
-         * 让上一次的驱动把波形走完而不是停在半途。 */
+        // if no pixel is driven then hold the screen by discharging
         if (s_row1 >= s_row0) {
             EPD_FastSync();          /* 等上一帧刷完 */
             if (s_pending) {
                 return -1;
             }
-            epd_send_generated_plane(0x26, 0u, next, s_row0, s_row1, s_col0, s_col1, 1u);
-            epd_send_generated_plane(0x24, 1u, next, s_row0, s_row1, s_col0, s_col1, 1u);
+            epd_send_generated_plane(0x26, 0u, next,1u);
+            epd_send_generated_plane(0x24, 1u, next,1u);
             epd_activate();          /* 全 HOLD 的一帧，同样不等它刷 */
 
             ++s_scan_count;

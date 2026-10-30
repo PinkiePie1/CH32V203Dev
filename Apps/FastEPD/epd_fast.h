@@ -42,13 +42,10 @@ void EPD_SendDisplay(const uint8_t *image);
 
 /* ---------------------------------------------------------- fast refresh */
 
-/* Prepare the fast waveform. Call once after a full refresh, then advance one
- * scan per EPD_FastFrame. One controller frame per scan is the fastest
- * (26 ms); 8 frames is much stronger but 166 ms.
- *
- * The waveform may not be reloaded while the booster is up, so the frame count
- * is fixed here, in one shot. */
+// set up the panel (LUT, RAM, boost converter, stuff like that) for fast refresh
 void EPD_FastPrepare(void);
+
+// 
 void EPD_FastPrepareFrames(uint8_t frames);
 
 // maximum budget for balck or white pixels
@@ -59,34 +56,23 @@ void EPD_SetPulseBudget(uint8_t black, uint8_t white);
    Overlapped pixels are also not driven*/
 void EPD_FastScan(const uint8_t *black, const uint8_t *white);
 
-/* Initialize the net drive state from the frame currently shown on the panel.
- * After a full refresh, call this with that same frame so pixels whose target
- * did not change are already saturated and will not be driven again.
- * Passing NULL clears the net state.
- * EPD_FastFrame returns 1 if it actually drove, 0 for a HOLD-only call, or -1
- * when a panel timeout prevented progress.
- *
- * Handled inside EPD_FastFrame, no caller work needed:
- *   - HOLD ending: once the change has been driven out, one extra scan with all
- *     masks clear lets the waveform finish cleanly (see EPD_HOLD_ENDING).
- *   - periodic clean: every EPD_CLEAN_INTERVAL fast scans, runs a full refresh
- *     and resets the per-pixel drive state after success. */
+// Initialize the net drive state f
 void EPD_FastBegin(const uint8_t *shown);
 
-/* 推进一帧。激活后直接返回。面板刷新一次大概20ms，这段时间CPU 可以继续算下一帧；
- * 下一次调用会自动等上一帧刷完再激活。想主动等就用 EPD_FastSync()。 */
+/* 推进一帧。激活后直接返回。这段时间CPU 可以继续算下一帧；
+ * 下一次调用会自动等上一帧刷完再激活 */
 int EPD_FastFrame(const uint8_t *next);
 
 /* 等面板把已激活的那一帧刷完（阻塞）。 */
 void EPD_FastSync(void);
 
-/* Fast scans since the last full refresh (the clean counter above). */
+// Fast scans since the last full refresh
 uint32_t EPD_FastScanCount(void);
 
-/* 上一次 FastFrame 是否遇到 BUSY 超时（读后清零）；1 = 面板可能卡住，建议重初始化 */
+// 0: normal. 1: timeout, try reset the panel.
 uint8_t EPD_TakeTimeoutFlag(void);
 
-/* ---------------------------------------------------------------- sleep */
+// puts the EPD back to sleep
 
 void EPD_Sleep(void);
 
