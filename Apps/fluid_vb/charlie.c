@@ -137,8 +137,8 @@ void LED_InitPeri(void)
     timBaseCfg.TIM_RepetitionCounter = 0;
     TIM_TimeBaseInit(TIM1, &timBaseCfg);
 
-    TIM_SetCompare1(TIM1,600); // cfgl
-    TIM_SetCompare2(TIM1,600); // cfgh //these two needs to be higher or ghosting appears when switching clock signals
+    TIM_SetCompare1(TIM1,100); // cfgl
+    TIM_SetCompare2(TIM1,100); // cfgh //these two needs to be higher or ghosting appears when switching clock signals
     TIM_SetCompare3(TIM1,Period); //odron
     TIM_SetCompare4(TIM1,1); // brightness
 
@@ -150,7 +150,7 @@ void LED_InitPeri(void)
     // CC4 -> channel 4
 
     //enable support for sleep mode. 
-    TIM_ITConfig(TIM1,TIM_IT_CC1 | TIM_IT_CC3 | TIM_IT_Update,ENABLE);
+    TIM_ITConfig(TIM1,TIM_IT_CC1 | TIM_IT_CC2 | TIM_IT_CC3 | TIM_IT_CC4 | TIM_IT_Update,ENABLE);
 	NVIC_EnableIRQ(TIM1_CC_IRQn);
     NVIC_EnableIRQ(TIM1_UP_IRQn);
 
@@ -193,7 +193,6 @@ void LED_SetPixel(uint16_t num, uint8_t color)
             count = comp & gpioCFGH[y]?count+1:count;
             count = comp & gpioCFGL[y]?count+1:count;
         }
-        count -= 1;
         uint16_t pwm = Period-(count);
         pwm = pwm - (pwm>>Brightness);
         bright[y] = pwm;
@@ -240,19 +239,30 @@ void LED_Brightness(int32_t brightness)
 void TIM1_CC_IRQHandler(void) __attribute__((interrupt("WCH-Interrupt-fast")));
 void TIM1_UP_IRQHandler(void) __attribute__((interrupt("WCH-Interrupt-fast")));
 
+
+
 void TIM1_UP_IRQHandler(void)
 {
     //has to update clock synchronously. otherwise brightness in rows will change
-    if(clockUpdate)
-    {
-       uint32_t dat = clockSpeed == FAST ? ((RCC->CFGR0 & ~RCC_HPRE) | RCC_HPRE_DIV1) : ((RCC->CFGR0 & ~RCC_HPRE) | RCC_HPRE_DIV8);
-       RCC->CFGR0 = dat;
-       clockUpdate = 0;
-    }
-    TIM_ClearITPendingBit(TIM1, TIM_IT_Update);
+     TIM_ClearITPendingBit(TIM1, TIM_IT_Update);
+
+   
+    
 }
+
+
+
 
 void TIM1_CC_IRQHandler(void)
 {
-    TIM_ClearITPendingBit(TIM1,TIM_IT_CC1|TIM_IT_CC3|TIM_IT_CC4);
+    if(TIM_GetITStatus(TIM1,TIM_IT_CC4) == SET){
+        if(clockUpdate)
+        {
+            uint32_t dat = (RCC->CFGR0 & ~RCC_HPRE);
+            dat |= clockSpeed == FAST ? RCC_HPRE_DIV1 : RCC_HPRE_DIV16; 
+            RCC->CFGR0 = dat;
+            clockUpdate = 0;
+        }
+    }
+    TIM_ClearITPendingBit(TIM1,TIM_IT_CC1|TIM_IT_CC2|TIM_IT_CC3|TIM_IT_CC4);
 }
