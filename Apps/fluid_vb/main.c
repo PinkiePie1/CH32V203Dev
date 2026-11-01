@@ -7,12 +7,11 @@
 
 /* Global define */
 
-#define PUSH_ITER 1
-#define GRID_ITER 7
-#define FRAME_WAKES 60U
+#define PUSH_ITER 1 //fix me: if push iter is bigger than 1 it will cause overflow
+#define GRID_ITER 8
+#define FRAME_WAKES 100U
 
-#define TIM1_PSC_FAST   23     
-#define TIM1_PSC_SLOW   2   
+
 
 /* Global Variable */
 
@@ -110,25 +109,33 @@ void Show(void)
  */
 
 
-   
+#define TIM1_PSC_FAST   15   
+#define TIM1_PSC_SLOW   0 
 
 volatile uint32_t g_clkState = 0;
 
 static void clock_to_fast(void)
 {
-
-    clockUpdate = 1;
+    if (clockUpdate){return;}
     clockSpeed = FAST;
     TIM1->PSC = TIM1_PSC_FAST;
-}
+    clockUpdate = 1;
+    while(clockUpdate){__WFI();}
+    
+
+}    
 
 static void clock_to_slow(void)
 {
-    clockUpdate = 1;
+    if (clockUpdate){return;}
     clockSpeed = SLOW;
     TIM1->PSC = TIM1_PSC_SLOW;
-}
+    clockUpdate = 1;      
+    while(clockUpdate){__WFI();}
+    
 
+    
+} 
 
 int main(void)
 {
@@ -163,6 +170,7 @@ try:
 
     clockUpdate = 1;
     clockSpeed = FAST;
+    LED_Brightness(8);
 
 
     
@@ -171,7 +179,6 @@ try:
     {
 
         clock_to_fast();
-        while(clockUpdate){__WFI();}
         
         GetAcce(&accex,&accey);
         ParticleIntegrate(accex, accey);
@@ -183,6 +190,8 @@ try:
         Show();
 
         clock_to_slow();
+        //while(clockUpdate){__WFI();}
+
         uint32_t count = FRAME_WAKES;
         while(count--)
         {

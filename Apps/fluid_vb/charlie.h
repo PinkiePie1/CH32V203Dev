@@ -4,7 +4,7 @@
 #include "debug.h"
 
 /* Global typedef */
-#define Period 1024U
+#define Period 1050U
 #define Compensation 0 // this value compensates multiple row. if led is too bright when only few is lit in a row, reduce this number
 #define Brightness 8 //this controls how bright the led is. less value = brighter.
 /* Global define */
@@ -12,8 +12,8 @@
 #define LEDON 1
 #define LEDOFF 0
 #define PinCount 16
-#define FAST 1
-#define SLOW 0
+#define FAST 3
+#define SLOW 4
 /* Global Variable */
 
 void LED_SetPixel(uint16_t num, uint8_t color);
