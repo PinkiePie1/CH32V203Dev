@@ -1,0 +1,221 @@
+#include "LIS2DH.h"
+
+#define I2CPort GPIOA
+#define SDA_PIN GPIO_Pin_8
+#define SCL_PIN GPIO_Pin_9
+
+#define ACK 1
+#define NOACK 0
+
+//#define SDA_LOW I2CPort->BCR |= SDA_PIN;GPIOA->CFGLR&=~(0xF<<4*7);GPIOA->CFGLR|=(0x3<<4*7);
+//#define SDA_HIGH I2CPort->BSHR |= SDA_PIN;GPIOA->CFGLR&=~(0xF<<4*7);GPIOA->CFGLR|=(0x8<<4*7);
+#define SDA_LOW I2CPort->BCR |= SDA_PIN
+#define SDA_HIGH I2CPort->BSHR |= SDA_PIN
+#define SCL_LOW (I2CPort->BCR |= SCL_PIN)
+#define SCL_HIGH (I2CPort->BSHR |= SCL_PIN)
+#define GET_SDA (I2CPort->INDR & SDA_PIN)
+#define I2C_DelayUS(x) Delay_Us(2)
+
+static void I2CStart(void)
+{
+    I2C_DelayUS(5);
+    SCL_HIGH;
+    I2C_DelayUS(5);
+    SDA_HIGH;
+    I2C_DelayUS(5);
+    SDA_LOW;
+    I2C_DelayUS(5);
+    SCL_LOW;
+    I2C_DelayUS(5);
+
+}
+
+static void I2CStop(void)
+{
+    I2C_DelayUS(5); 
+    SCL_LOW;
+    I2C_DelayUS(5); 
+    SDA_LOW;
+    I2C_DelayUS(5);    
+    SCL_HIGH;
+    I2C_DelayUS(5);
+    SDA_HIGH;
+    I2C_DelayUS(5); 
+}
+
+static uint8_t I2CWrite(uint8_t dat)
+{
+    for(uint8_t i = 0; i < 8; i++)
+    {
+ 
+        if (0x80 & dat){
+            SDA_HIGH;
+        } else {
+            SDA_LOW;
+        }
+        SCL_HIGH;
+        I2C_DelayUS(5);
+        SCL_LOW;
+        I2C_DelayUS(5);
+        dat = (dat << 1);
+    }
+    SDA_HIGH;
+    I2C_DelayUS(5);
+    SCL_HIGH;
+    I2C_DelayUS(5);
+    if(GET_SDA == 0){
+        SCL_LOW;
+        return ACK;
+    } else {
+        SCL_LOW;
+        return NOACK;
+    }
+
+}
+
+static uint8_t I2CRead(uint8_t ack)
+{
+    uint8_t dat = 0;
+    SDA_HIGH;
+    for(uint8_t i = 0; i < 8; i++)
+    {
+        dat = (dat << 1);
+        I2C_DelayUS(5);
+        SCL_HIGH;
+        I2C_DelayUS(5);
+        if (GET_SDA == 0){
+
+        } else {
+            dat |= 0x01;
+        }
+        SCL_LOW;
+    I2C_DelayUS(5);    
+    }
+    if(ack == ACK){
+        SDA_LOW;
+    } else {
+        SDA_HIGH;
+    }
+    I2C_DelayUS(5);
+    SCL_HIGH;
+    I2C_DelayUS(5);
+    SCL_LOW;
+    I2C_DelayUS(5);
+    SDA_HIGH;
+    return dat;
+
+}
+
+
+//写LIS2,0x32 addr
+static void LIS2_Write(uint8_t reg, uint16_t  dat)
+{
+    I2CStart();
+    I2CWrite(0x32);
+    I2CWrite(reg);
+    I2CWrite(dat);
+    I2CStop();
+}
+
+//读LIS2,0x33 addr
+static void LIS2_Read(uint8_t reg, uint8_t * buffer, uint8_t length)
+{
+    I2CStart();
+    I2CWrite(0x32);
+    I2CWrite(0x80|reg);
+    I2CStart();//repeated start
+    I2CWrite(0x33);
+    for(int8_t i = 0; i < length-1;i++)
+    {
+        buffer[i] = I2CRead(ACK);
+    }
+    buffer[length-1] = I2CRead(NOACK);
+    I2CStop();
+    
+    
+}
+
+uint8_t LIS2DH_INTERRUT(void)
+{
+    uint8_t flag = 0;
+    
+    LIS2_Write(0x22,0x40);//IA1 on INT1.
+    LIS2_Write(0x30,0x0A);//x and y high enable
+    LIS2_Write(0x21,0x31);//enable high pass
+    LIS2_Write(0x32,0x02);//threshold is small
+    return flag;
+}
+
+//初始化SPI1及对应引脚，包括CS脚
+uint8_t LIS2DH_Init(void)
+{
+    uint8_t flag = 0;
+    RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA, ENABLE);
+    GPIO_InitTypeDef GPIO_InitStructure = {0};
+
+    GPIOA->BSHR = SDA_PIN|SCL_PIN;
+    
+    GPIO_InitStructure.GPIO_Pin   = SDA_PIN;
+    GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_Out_OD; //从机无法接收的时候会强制拉低SCL
+    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+    GPIO_Init(GPIOA, &GPIO_InitStructure); 
+
+    GPIO_InitStructure.GPIO_Pin   = SCL_PIN;
+    GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_Out_OD; //从机无法接收的时候会强制拉低SCL
+    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+    GPIO_Init(GPIOA, &GPIO_InitStructure); 
+
+    SCL_HIGH;
+    SDA_HIGH;
+
+    uint8_t buf[10] = {0};
+    LIS2_Read(0x0F,buf,1);//read whoami
+
+    if (  buf[0] == 0x33 )
+    {
+        PRINT("Found LIS2DH!\r\n");
+        LIS2_Write(0x21,0x00);//disable filter
+        LIS2_Write(0x22,0x00);//disable interrupt
+        LIS2_Write(0x23,0x30);//16G FS
+        LIS2_Write(0x20,0x67);
+        LIS2DH_INTERRUT(); //init interrupt for motion detection.
+    }
+    else
+    {
+        PRINT("LIS2DH not found, read: %x\r\n",buf[0]);
+        flag = 1;
+    }
+
+    return flag;
+
+}
+
+void LIS2DH_Deinit(void)
+{
+    LIS2_Write(0x20,0x27);//LIS2DH at 10HzODR.
+    LIS2_Write(0x32,0x05);//relatively large thershould.
+    
+
+}
+
+void LIS2DH_Get(int16_t * x, int16_t * y, int16_t * z)
+{
+    uint8_t buf[10] = {0};
+    LIS2_Read(0x28,buf,4);//流体模拟只用X/Y两轴，少读2字节缩短I2C占用时间
+
+    uint8_t X_H,X_L,Y_H,Y_L; // Three-axis data (high and low)
+    X_H=buf[1];
+    X_L=buf[0];
+    Y_H=buf[3];
+    Y_L=buf[2];
+    int16_t SL_ACCEL_X,SL_ACCEL_Y ; // Three-axis data
+    SL_ACCEL_X = (int16_t)((X_H<< 8) | X_L); // Merging data
+    SL_ACCEL_Y = (int16_t)((Y_H<< 8) | Y_L); // Forcing data type conversion
+    SL_ACCEL_X = SL_ACCEL_X>>6;
+    SL_ACCEL_Y = SL_ACCEL_Y>>6;
+
+    *x=SL_ACCEL_X;
+    *y=SL_ACCEL_Y;
+    *z=0;
+
+}
