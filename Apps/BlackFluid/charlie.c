@@ -187,7 +187,7 @@ void LED_SetPixel(uint16_t num, uint8_t color)
         }
     }
     if(mode == 0){
-        u8 count = 1;
+        u8 count = 6;
         for (u32 comp = 0x3; comp; comp<<=4)
         {
             count = comp & gpioCFGH[y]?count+1:count;

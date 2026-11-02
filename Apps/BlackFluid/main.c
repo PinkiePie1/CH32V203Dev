@@ -75,6 +75,7 @@ void shutdown(void)
     EXTI0_INT_INIT();
     RCC_APB1PeriphClockCmd(RCC_APB1Periph_PWR,ENABLE);
     PWR_EnterSTOPMode(PWR_Regulator_LowPower,PWR_STOPEntry_WFI);
+    //PWR_EnterSTANDBYMode();
     NVIC_SystemReset();
     
 }
