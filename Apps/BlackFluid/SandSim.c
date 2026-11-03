@@ -26,6 +26,7 @@ static _iq vWeight[CellCount];
 
 static _iq particleDensity[CellCount];
 static uint8_t cellType[CellCount];
+static uint8_t previousScreen[(CellNumX - 2U) * (CellNumY - 2U)];
 static _iq particleRestDensity = 0;
 
 //内联定点乘法
@@ -104,7 +105,7 @@ static _iq minDist;
 static _iq minDist2;
 
 /* 距离平方分档，线性插值得到 minDist/d。 */
-#define RSQRT_ENTRIES 160U
+#define RSQRT_ENTRIES 192U
 static _iq ratioTab[RSQRT_ENTRIES];
 static _iq ratioXMin;
 static unsigned int ratioShift;
@@ -179,6 +180,7 @@ static inline unsigned int is_solid_cell(unsigned int x, unsigned int y) {
 
 void InitParticles(void) {
     fluidCellCount = 0;
+    memset(previousScreen, 0xff, sizeof(previousScreen));
     memset(particleVel, 0, sizeof(particleVel));
     memset(uVel, 0, sizeof(uVel));
     memset(vVel, 0, sizeof(vVel));
@@ -593,8 +595,12 @@ void grid_to_particles(void) {
 void screen_update(void) {
     for (unsigned int x = 1; x < CellNumX - 1U; x++) {
         for (unsigned int y = 1; y < CellNumY - 1U; y++) {
-            LED_SetPixel((x - 1U) * 16U + y - 1U,
-                         cellType[INDEX(x, y)] == FLUID_CELL ? LEDON : LEDOFF);
+            unsigned int pixel = (x - 1U) * (CellNumY - 2U) + y - 1U;
+            uint8_t cell = cellType[INDEX(x, y)];
+            if (previousScreen[pixel] != cell) {
+                LED_SetPixel(pixel, cell == FLUID_CELL ? LEDON : LEDOFF);
+                previousScreen[pixel] = cell;
+            }
         }
     }
 }

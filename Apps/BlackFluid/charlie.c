@@ -1,7 +1,7 @@
 #include "charlie.h"
 
-uint8_t clockUpdate = 1;
-uint8_t clockSpeed = FAST;
+volatile uint8_t clockUpdate = 1;
+volatile uint8_t clockSpeed = FAST;
 
 const uint16_t LUT[240] = {
      97, 143, 128,  83, 140,  64,  79, 109,
@@ -137,8 +137,8 @@ void LED_InitPeri(void)
     timBaseCfg.TIM_RepetitionCounter = 0;
     TIM_TimeBaseInit(TIM1, &timBaseCfg);
 
-    TIM_SetCompare1(TIM1,300); // cfgl
-    TIM_SetCompare2(TIM1,300); // cfgh //these two needs to be higher or ghosting appears when switching clock signals
+    TIM_SetCompare1(TIM1,500); // cfgl
+    TIM_SetCompare2(TIM1,500); // cfgh //these two needs to be higher or ghosting appears when switching clock signals
     TIM_SetCompare3(TIM1,Period); //odron
     TIM_SetCompare4(TIM1,0); // brightness
 
@@ -149,7 +149,7 @@ void LED_InitPeri(void)
     // CC3 -> channel 6
     // CC4 -> channel 4
 
-    //enable support for sleep mode. 
+    // V203 的 DMA 写 GPIO 依赖 CPU 唤醒，保留所有刷新中断（原厂确认）。
     TIM_ITConfig(TIM1,TIM_IT_CC1 | TIM_IT_CC2 | TIM_IT_CC3 | TIM_IT_CC4 | TIM_IT_Update,ENABLE);
 	NVIC_EnableIRQ(TIM1_CC_IRQn);
     NVIC_EnableIRQ(TIM1_UP_IRQn);
@@ -187,7 +187,7 @@ void LED_SetPixel(uint16_t num, uint8_t color)
         }
     }
     if(mode == 0){
-        u8 count = 6;
+        u8 count = 1;
         for (u32 comp = 0x3; comp; comp<<=4)
         {
             count = comp & gpioCFGH[y]?count+1:count;

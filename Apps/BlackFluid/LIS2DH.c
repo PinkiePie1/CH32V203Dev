@@ -173,7 +173,6 @@ uint8_t LIS2DH_Init(void)
 
     if (  buf[0] == 0x33 )
     {
-        PRINT("Found LIS2DH!\r\n");
         LIS2_Write(0x21,0x00);//disable filter
         LIS2_Write(0x22,0x00);//disable interrupt
         LIS2_Write(0x23,0x30);//16G FS
@@ -182,7 +181,6 @@ uint8_t LIS2DH_Init(void)
     }
     else
     {
-        PRINT("LIS2DH not found, read: %x\r\n",buf[0]);
         flag = 1;
     }
 

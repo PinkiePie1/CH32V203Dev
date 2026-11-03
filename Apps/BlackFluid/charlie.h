@@ -21,6 +21,6 @@ void LED_InitPeri(void);
 void LED_Show(void);
 void LED_TurnOff(void);
 void LED_Brightness(int32_t brightness);
-extern uint8_t clockSpeed;
-extern uint8_t clockUpdate;
+extern volatile uint8_t clockSpeed;
+extern volatile uint8_t clockUpdate;
 #endif

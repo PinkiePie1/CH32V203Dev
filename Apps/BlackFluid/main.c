@@ -7,15 +7,15 @@
 
 /* Global define */
 
-#define PUSH_ITER 1 //fix me: if push iter is bigger than 1 it will cause overflow
-#define GRID_ITER 8
-#define FRAME_WAKES 70U
+#define PUSH_ITER FluidPushIterations
+#define GRID_ITER FluidPressureIterations
+#define FRAME_WAKES 76U
 
 
 
 /* Global Variable */
 
-uint32_t sleepTimer = 0;
+volatile uint32_t sleepTimer = 0;
 
 
 
@@ -80,23 +80,20 @@ void shutdown(void)
     
 }
 
-void GetAcce(_iq * accex, _iq * accey)
+static _iq acceleration_from_raw(int32_t value)
 {
-    int16_t x,y,z;
-    LIS2DH_Get(&x,&y,&z);
-
-    int16_t xt = x+y; //旋转45度
-    int16_t yt = x-y;
-
-
-    float xp = (float) (-yt * 0.35f);
-    float yp = (float) (-xt * 0.35f);
-
-    *accex = _IQ(yp);
-    *accey = _IQ(xp);
-
+    if (value > 365) value = 365;
+    if (value < -365) value = -365;
+    return value * _IQ(0.35f);
 }
 
+void GetAcce(_iq *accex, _iq *accey)
+{
+    int16_t x, y, z;
+    LIS2DH_Get(&x, &y, &z);
+    *accex = acceleration_from_raw(-(int32_t)x - y);
+    *accey = acceleration_from_raw((int32_t)y - x);
+}
 
 void Show(void)
 {    
@@ -149,10 +146,8 @@ int main(void)
     SystemCoreClockUpdate();
     Delay_Init();
     GPIOallPU();
-    USART_Printf_Init(115200);
     EXTI0_INT_INIT();
 
-    PRINT("This is FLIP\r\n");
 
     InitParticles();
     LED_InitPeri();
