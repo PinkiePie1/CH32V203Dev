@@ -1,11 +1,14 @@
 #include "SandSim.h"
 #include "charlie.h"
+#include <string.h>
 
 #pragma GCC optimize("O3,unroll-loops,rename-registers,ira-loop-pressure")
 
-uint8_t screen[32];
-_iq invertSpacing;
+_Static_assert(GLOBAL_Q == 24, "SandSim uses Q24");
+_Static_assert(NumberOfParticles <= 256U, "Particle IDs use uint8_t");
+_Static_assert(2 * ParticleRadius <= Spacing, "Particle diameter must fit one grid cell");
 
+static _iq invertSpacing;
 
 #define FLUID_CELL 0U
 #define AIR_CELL 1U
@@ -21,7 +24,6 @@ static _iq vPrev[CellCount];
 static _iq uWeight[CellCount];
 static _iq vWeight[CellCount];
 
-//static _iq pressure[CellCount];
 static _iq particleDensity[CellCount];
 static uint8_t cellType[CellCount];
 static _iq particleRestDensity = 0;
@@ -29,10 +31,9 @@ static _iq particleRestDensity = 0;
 //内联定点乘法
 static inline _iq qmul(_iq a, _iq b) {
     return (_iq)(((long long)a * (long long)b) >> 24);
-    //return _IQmpy(a,b);
 }
 
-//memset逐字节
+/* 按字清零和复制网格。 */
 static void clear_grid(_iq *grid) {
     unsigned int i = 0;
     for (; i + 3U < CellCount; i += 4U) {
@@ -45,7 +46,6 @@ static void clear_grid(_iq *grid) {
         grid[i] = 0;
     }
 }
-
 
 static void copy_grid(_iq *dst, const _iq *src) {
     unsigned int i = 0;
@@ -64,15 +64,13 @@ static void copy_grid(_iq *dst, const _iq *src) {
 static uint16_t fluidCells[CellCount];
 static unsigned int fluidCellCount = 0;
 
-/* negOverInvSolid[s] = -overRelaxiation/s (s只可能为1~4)，在InitParticles中计算，代替压力求解里的逐次除法 */
+/* 压力系数 -overRelaxiation / 可通行邻格数。 */
 static _iq negOverInvSolid[5];
 
-/* PushParticlesApart计数排序两次扫描之间复用的粒子所属单元号 */
+/* 本轮分桶固定，下一轮按新位置重建。 */
 static uint16_t particleCell[NumberOfParticles];
 
-/* 两种交错网格偏移各缓存一组坐标，供速度传输和密度计算复用。
- * particles_to_grid之后直到grid_to_particles结束，粒子位置保持不变。
- * 每粒子10字节：插值系数存Q16，两套格号只存一套（另一套按同一判据推出）。 */
+/* Q16 小数部分，半格偏移通过加 0x8000 回绕得到。每粒子 6 字节。 */
 typedef struct {
     uint16_t tx;      /* 无偏移那套的插值系数，Q16；半格偏移 = +0.5 回绕 */
     uint16_t ty;
@@ -81,120 +79,81 @@ typedef struct {
 } ParticleGridSample;
 static ParticleGridSample particleGridSample[NumberOfParticles];
 
-/* 四个Q24双线性权重之和接近1；缓存常见分母的精确库函数结果。 */
-static _iq invWeightSum[4];
-
-static _iq minX = Spacing + ParticleRadius;
-static _iq minY = Spacing + ParticleRadius;
+static const _iq minX = Spacing + ParticleRadius;
+static const _iq minY = Spacing + ParticleRadius;
 static _iq maxX;
 static _iq maxY;
 
 #define CellPrefixCountSize (CellCount + 1U)
 
-static uint16_t cellParticleCountPrefix[CellPrefixCountSize];  /* 256 粒子时前缀会超过 255 */
+static uint16_t cellParticleCountPrefix[CellPrefixCountSize];
 static uint8_t particlePosId[NumberOfParticles];
 
-/* 固体边界单元索引表：particles_to_grid里只有这些单元需要回填速度，
- * 预先生成后就不必每帧扫描整个网格。
- * 上界：固体单元 2*(X+Y-2) 个，加上紧贴固体的一列/一行，取 3*(X+Y) 足够。 */
+/* 固定墙面的速度始终为零。 */
 #define SolidListMax (3U * (CellNumX + CellNumY))
 static uint16_t uSolidCells[SolidListMax];
 static uint16_t vSolidCells[SolidListMax];
 static unsigned int uSolidCount = 0;
 static unsigned int vSolidCount = 0;
 
-/* 每个单元的四个邻格哪些可以通行（与solidMask同义：1=可通行），
- * 位0=左 位1=右 位2=下 位3=上。压力求解里用一次查表代替四次 solidMask 读取。 */
+/* 可通行邻格：位 0 左、位 1 右、位 2 下、位 3 上。 */
 static uint8_t solidDirMask[CellCount];
-
-/* 单元坐标乘Spacing的查表值，省去逐粒子重复乘法 */
-static _iq cellOffsetX[CellNumX];
-static _iq cellOffsetY[CellNumY];
 
 /* 粒子对的最小间距，InitParticles里按 ParticleRadius 计算 */
 static _iq minDist;
 static _iq minDist2;
 
-/* 粒子对修正需要 w = minDist/d（d=sqrt(d2)），位移比例是 0.5*(w-1)。
- * 库里的 _IQ24sqrt(约52条)+_IQ24div_FAST(约85条)太贵；这里按 d2 线性分档查表
- * 得到 w 的种子，再做一次牛顿迭代，约50条。w 只在 [1, 4.4] 之间，全程不会溢出。
- * 表在 InitParticles 里用库函数生成，随 Spacing/半径自动适配。 */
-#define RSQRT_SHIFT      7U                      /* 每档 128 个 Q24 单位 */
-#define RSQRT_ENTRIES    (160U)                  /* 固定档数，每档宽度按参数自动选 */
-static _iq ratioTab[RSQRT_ENTRIES];              /* minDist/d，Q24 */
-static _iq ratioXMin;                           /* 表起点；d2 更小则退回库函数 */
-static unsigned int ratioEntries;                /* 实际使用的档数 */
-static unsigned int ratioShift;                  /* 每档的 d2 步长 = 2^ratioShift */
-static _iq invMinDist2Q;                         /* (1/minDist²)*2^qScale */
-static unsigned int qScale;                      /* 上面的缩放位数，按参数自动选，保证不溢出 */
+/* 距离平方分档，线性插值得到 minDist/d。 */
+#define RSQRT_ENTRIES 160U
+static _iq ratioTab[RSQRT_ENTRIES];
+static _iq ratioXMin;
+static unsigned int ratioShift;
 
-/* 返回 w = minDist/d 的Q24近似 */
 static inline _iq qdist_ratio(_iq x) {
     unsigned int t = (unsigned int)(x - ratioXMin);
     unsigned int i = t >> ratioShift;
-    _iq w0, w1, w, fracq;
-
-    if (i >= ratioEntries - 1U) {                /* 参数改动后极端值也不会越界 */
-        i = ratioEntries - 2U;
-        t = (1U << ratioShift) - 1U;
-    }
-    fracq = (_iq)((t & ((1U << ratioShift) - 1U)) << (24U - ratioShift));
-    w0 = ratioTab[i];
-    w1 = ratioTab[i + 1U];
-    w = w0 + qmul(w1 - w0, fracq);
-
-    /* 牛顿迭代：w = w*(1.5 - 0.5*d2*w*w/minDist²) */
-    _iq r = qmul(qmul(x, qmul(w, w)), invMinDist2Q) << (24U - qScale);
-    return qmul(w, _IQ(1.5) - qmul(_IQ(0.5), r));
+    unsigned int fraction = t & ((1U << ratioShift) - 1U);
+    return ratioTab[i] + (_iq)(((long long)(ratioTab[i + 1U] - ratioTab[i]) * fraction) >> ratioShift);
 }
 
-/* 归一化除法用的 1/w 查询表：w 是双线性权重之和，落在 (0,4]。
- * 按 0.0625 一档存每档中心的倒数，两次牛顿迭代后相对误差约1e-5；
- * w<0.5 的稀疏格子仍走库函数。 */
-#define WRECIP_SHIFT     20U                     /* 0.0625 在Q24里是 2^20 */
-#define WRECIP_ENTRIES   (64U)
+/* 分母归一化到 [1,2)，64 档初值加两次牛顿迭代。 */
+#define WRECIP_ENTRIES 64U
 static _iq wRecipTab[WRECIP_ENTRIES];
 
-static inline _iq qrecip_pos(_iq w) {
-    unsigned int i;
-    _iq r;
-
-    /* 粒子多时一格权重之和会超过4，出了查表范围；牛顿初值会在收敛域外（结果变负），
-     * 必须走精确除法。 */
-    if (w >= _IQ(4.0)) {
-        return _IQdiv(_IQ(1.0), w);
-    }
-    i = (unsigned int)(w >> WRECIP_SHIFT);
-    r = wRecipTab[i];
+static inline _iq normalized_reciprocal(_iq w) {
+    unsigned int index = (unsigned int)(w - _IQ(1.0)) >> 18;
+    _iq r = wRecipTab[index];
     r = qmul(r, _IQ(2.0) - qmul(w, r));
-    r = qmul(r, _IQ(2.0) - qmul(w, r));
-    return r;
+    return qmul(r, _IQ(2.0) - qmul(w, r));
 }
 
-void printLocation(unsigned int n);
-
-static int clamp_index(int value, int min_value, int max_value) {
-    if (value < min_value) {
-        return min_value;
+static inline _iq divide_weight(_iq value, _iq weight) {
+    /* 常见权重使用固定移位，省去 RV32 的软件 CLZ 和 64 位变移位。 */
+    if (weight >= _IQ(0.5) && weight < _IQ(4.0)) {
+        unsigned int small = weight < _IQ(1.0);
+        unsigned int large = weight >= _IQ(2.0);
+        _iq w = small ? weight << 1 : large ? weight >> 1 : weight;
+        _iq r = normalized_reciprocal(w);
+        long long product = (long long)value * r;
+        if (small) return (_iq)(product >> 23);
+        if (large) return (_iq)(product >> 25);
+        return (_iq)(product >> 24);
     }
-    if (value > max_value) {
-        return max_value;
-    }
-    return value;
+    int shift = __builtin_clz((unsigned int)weight) - 7;
+    _iq w = shift >= 0 ? weight << shift : weight >> -shift;
+    _iq r = normalized_reciprocal(w);
+    return (_iq)(((long long)value * r) >> (24 - shift));
 }
 
-static _iq clampf_local(_iq value, _iq min_value, _iq max_value) {
-    if (value < min_value) {
-        return min_value;
-    }
-    if (value > max_value) {
-        return max_value;
-    }
-    return value;
+/* 用减法补足另外两个权重，四项之和严格等于 1。 */
+static inline void bilinear_weights(uint16_t tx, uint16_t ty, _iq w[4]) {
+    uint32_t sy = 0x10000U - ty;
+    w[1] = ((uint32_t)tx * sy) >> 8;
+    w[2] = ((uint32_t)tx * ty) >> 8;
+    w[0] = (_iq)(sy << 8) - w[1];
+    w[3] = ((_iq)ty << 8) - w[2];
 }
 
-/* 半格偏移那套的起始格号：小数部分 < 0.5 时往后退一格（与缓存填充时同一个判据）。
- * tQ16 是无偏移那套的插值系数，0.5 对应 0x8000。 */
 static inline int sample_cell(uint8_t base, uint16_t tQ16) {
     if (tQ16 >= 0x8000U) {
         return (int)base;
@@ -203,23 +162,14 @@ static inline int sample_cell(uint8_t base, uint16_t tQ16) {
 }
 
 static void cache_particle_grid_samples(void) {
-    const _iq h = Spacing;
     for (unsigned int i = 0; i < NumberOfParticles; i++) {
-        _iq x = clampf_local(particlePos[XID(i)], h, qmul(_IQ(CellNumX - 1U), h));
-        _iq y = clampf_local(particlePos[YID(i)], h, qmul(_IQ(CellNumY - 1U), h));
+        _iq x = qmul(particlePos[XID(i)], invertSpacing);
+        _iq y = qmul(particlePos[YID(i)], invertSpacing);
         ParticleGridSample *sample = &particleGridSample[i];
-
-        /* 不带偏移的那套直接算 */
-        int x0 = clamp_index(_IQint(qmul(x, invertSpacing)), 0, (int)CellNumX - 2);
-        int y0 = clamp_index(_IQint(qmul(y, invertSpacing)), 0, (int)CellNumY - 2);
-        _iq fx = x - cellOffsetX[x0];          /* 0 <= fx < h */
-        _iq fy = y - cellOffsetY[y0];
-        sample->x0 = (uint8_t)x0;
-        sample->y0 = (uint8_t)y0;
-        sample->tx = (uint16_t)(qmul(fx, invertSpacing) >> 8);
-        sample->ty = (uint16_t)(qmul(fy, invertSpacing) >> 8);
-        /* 半格偏移那套的系数就是无偏移 +0.5：Q16 里 0.5 是 0x8000，
-         * 16 位加法自然回绕到 [0,1)，不用再算一遍；格号另由 sample_cell() 推出。 */
+        sample->x0 = (uint8_t)_IQint(x);
+        sample->y0 = (uint8_t)_IQint(y);
+        sample->tx = (uint16_t)(x >> 8);
+        sample->ty = (uint16_t)(y >> 8);
     }
 }
 
@@ -227,7 +177,8 @@ static inline unsigned int is_solid_cell(unsigned int x, unsigned int y) {
     return (x == 0U || x == CellNumX - 1U || y == 0U || y == CellNumY - 1U) ? 1U : 0U;
 }
 
-void InitParticles() {
+void InitParticles(void) {
+    fluidCellCount = 0;
     memset(particleVel, 0, sizeof(particleVel));
     memset(uVel, 0, sizeof(uVel));
     memset(vVel, 0, sizeof(vVel));
@@ -236,45 +187,23 @@ void InitParticles() {
     memset(particleDensity, 0, sizeof(particleDensity));
     particleRestDensity = _IQ(0.0);
 
-    /* 网格布局是静态的：单元类型、邻格可通行掩码、边界单元表只在这里算一次 */
-    for (unsigned int x = 0; x < CellNumX; x++) {
-        cellOffsetX[x] = qmul(_IQ(x), Spacing);
-    }
-    for (unsigned int y = 0; y < CellNumY; y++) {
-        cellOffsetY[y] = qmul(_IQ(y), Spacing);
-    }
-
-    /* 粒子对间距，以及 w=minDist/d 的查表（种子足够准，一次牛顿迭代即收敛） */
-    minDist = qmul(_IQ(2.0), ParticleRadius);
+    minDist = 2 * ParticleRadius;
     minDist2 = qmul(minDist, minDist);
-    ratioXMin = minDist2 >> 4;          /* 对应 d=minDist/4，此时 w=4，Q24装得下 */
-    if (minDist2 > ratioXMin) {
-        unsigned int range = (unsigned int)(minDist2 - ratioXMin);
-        ratioShift = 0;
-        while ((range >> ratioShift) >= (RSQRT_ENTRIES - 2U)) {
-            ratioShift++;
-        }
-        ratioEntries = (range >> ratioShift) + 2U;
-        for (unsigned int i = 0; i < ratioEntries; i++) {
-            _iq x = ratioXMin + (_iq)(i << ratioShift);
-            ratioTab[i] = _IQdiv(minDist, _IQsqrt(x));
-        }
-        /* 选缩放位数，使 (1/minDist²)*2^qScale 落在 int32 内 */
-        qScale = 24U;
-        while (qScale > 0U && (((long long)1 << (qScale + 24U)) / minDist2) > 0x7FFFFFFFLL) {
-            qScale--;
-        }
-        invMinDist2Q = _IQdiv((_iq)(1L << qScale), minDist2);   /* = (1/minDist²)*2^qScale */
-    } else {
-        ratioXMin = 0x7FFFFFFF;         /* 参数太极端就全部走库函数分支 */
-        ratioShift = 1U;
-        ratioEntries = 2U;
+    ratioXMin = minDist2 >> 4;
+    unsigned int range = (unsigned int)(minDist2 - ratioXMin);
+    ratioShift = 0;
+    while ((range >> ratioShift) >= RSQRT_ENTRIES - 1U) {
+        ratioShift++;
+    }
+    unsigned int entries = (range >> ratioShift) + 2U;
+    for (unsigned int i = 0; i < entries; i++) {
+        _iq x = ratioXMin + (_iq)(i << ratioShift);
+        ratioTab[i] = _IQdiv(minDist, _IQsqrt(x));
     }
 
-    /* 1/w 查询表（归一化除法用） */
     for (unsigned int i = 0; i < WRECIP_ENTRIES; i++) {
-        _iq wc = (_iq)((i << WRECIP_SHIFT) + (1L << (WRECIP_SHIFT - 1U)));
-        wRecipTab[i] = _IQdiv(_IQ(1.0), wc);
+        _iq w = _IQ(1.0) + (_iq)(i << 18) + (1L << 17);
+        wRecipTab[i] = _IQdiv(_IQ(1.0), w);
     }
 
     uSolidCount = 0;
@@ -295,13 +224,10 @@ void InitParticles() {
             if (solidHere || bottomSolid) {
                 vSolidCells[vSolidCount++] = (uint16_t)idx;
             }
-            /* 注意与solidMask同义：位为1表示该方向可通行 */
             solidDirMask[idx] = (uint8_t)((leftSolid ? 0U : 1U) | (rightSolid ? 0U : 2U)
                                         | (bottomSolid ? 0U : 4U) | (topSolid ? 0U : 8U));
         }
     }
-
-
 
     const _iq h = Spacing;
     const _iq r = ParticleRadius;
@@ -314,10 +240,6 @@ void InitParticles() {
     for (unsigned int s = 1U; s <= 4U; s++) {
         negOverInvSolid[s] = -_IQdiv(overRelaxiation, _IQ(s));
     }
-    for (unsigned int loss = 0; loss < 4U; loss++) {
-        invWeightSum[loss] = _IQdiv(_IQ(1.0), _IQ(1.0) - (_iq)loss);
-    }
-
     unsigned int p_num = 0;
     for (unsigned int i = 0; i < CellNumX && p_num < NumberOfParticles; i++) {
         for (unsigned int j = 0; j < CellNumY && p_num < NumberOfParticles; j++) {
@@ -338,6 +260,28 @@ void InitParticles() {
     }
 }
 
+/* 墙面只反弹朝外的速度，粒子分离造成的越界不会翻转朝内速度。 */
+static void clamp_particles(void) {
+    for (unsigned int i = 0; i < NumberOfParticles; i++) {
+        _iq *pos = &particlePos[2U * i];
+        _iq *vel = &particleVel[2U * i];
+        if (pos[0] < minX) {
+            pos[0] = minX;
+            if (vel[0] < 0) vel[0] = qmul(vel[0], BOUNCYNESS);
+        } else if (pos[0] > maxX) {
+            pos[0] = maxX;
+            if (vel[0] > 0) vel[0] = qmul(vel[0], BOUNCYNESS);
+        }
+        if (pos[1] < minY) {
+            pos[1] = minY;
+            if (vel[1] < 0) vel[1] = qmul(vel[1], BOUNCYNESS);
+        } else if (pos[1] > maxY) {
+            pos[1] = maxY;
+            if (vel[1] > 0) vel[1] = qmul(vel[1], BOUNCYNESS);
+        }
+    }
+}
+
 void ParticleIntegrate(_iq xAcceleration, _iq yAcceleration) {
     const _iq dvx = qmul(xAcceleration, dt);
     const _iq dvy = qmul(yAcceleration, dt);
@@ -346,159 +290,102 @@ void ParticleIntegrate(_iq xAcceleration, _iq yAcceleration) {
         particleVel[YID(i)] += dvy;
         particlePos[XID(i)] += qmul(particleVel[XID(i)], dt);
         particlePos[YID(i)] += qmul(particleVel[YID(i)], dt);
-
-        _iq x = particlePos[XID(i)];
-        _iq y = particlePos[YID(i)];
-
-        if (x < minX) {
-            x = minX;
-            particleVel[XID(i)] = qmul(particleVel[XID(i)], BOUNCYNESS);
-        }
-        if (x > maxX) {
-            x = maxX;
-            particleVel[XID(i)] = qmul(particleVel[XID(i)], BOUNCYNESS);
-        }
-        if (y < minY) {
-            y = minY;
-            particleVel[YID(i)] = qmul(particleVel[YID(i)] ,BOUNCYNESS);
-        }
-        if (y > maxY) {
-            y = maxY;
-            particleVel[YID(i)] = qmul(particleVel[YID(i)] ,BOUNCYNESS);
-        }
-
-        particlePos[XID(i)] = x;
-        particlePos[YID(i)] = y;
     }
+    clamp_particles();
 }
 
-/* 前缀数组清零（uint16，614 字节）：memset 是逐字节的，按字清更快 */
-static void clear_prefix(void) {
-    unsigned int i = 0;
-    for (; i + 3U < CellPrefixCountSize; i += 4U) {
-        cellParticleCountPrefix[i] = 0U;
-        cellParticleCountPrefix[i + 1U] = 0U;
-        cellParticleCountPrefix[i + 2U] = 0U;
-        cellParticleCountPrefix[i + 3U] = 0U;
+static void build_particle_grid(void) {
+    /* 本工具链的 memset 逐字节写入，这里每次清四个计数。 */
+    unsigned int n = 0;
+    for (; n + 3U < CellPrefixCountSize; n += 4U) {
+        cellParticleCountPrefix[n] = 0;
+        cellParticleCountPrefix[n + 1U] = 0;
+        cellParticleCountPrefix[n + 2U] = 0;
+        cellParticleCountPrefix[n + 3U] = 0;
     }
-    for (; i < CellPrefixCountSize; i++) {
-        cellParticleCountPrefix[i] = 0U;
-    }
-}
-void PushParticlesApart(unsigned int nIters) {
-    clear_prefix();
-
+    for (; n < CellPrefixCountSize; n++) cellParticleCountPrefix[n] = 0;
     for (unsigned int i = 0; i < NumberOfParticles; i++) {
-        unsigned int xi = (unsigned int)clamp_index(_IQint(qmul(particlePos[XID(i)], invertSpacing)), 0, (int)CellNumX - 1);
-        unsigned int yi = (unsigned int)clamp_index(_IQint(qmul(particlePos[YID(i)], invertSpacing)), 0, (int)CellNumY - 1);
-        unsigned int cellNr = INDEX(xi, yi);
-        particleCell[i] = (uint16_t)cellNr;
-        cellParticleCountPrefix[cellNr]++;
+        unsigned int x = (unsigned int)_IQint(qmul(particlePos[XID(i)], invertSpacing));
+        unsigned int y = (unsigned int)_IQint(qmul(particlePos[YID(i)], invertSpacing));
+        unsigned int cell = INDEX(x, y);
+        particleCell[i] = (uint16_t)cell;
+        cellParticleCountPrefix[cell]++;
     }
-
     unsigned int prefix = 0;
-    for (unsigned int i = 0; i < CellCount; i++) {
-        prefix += cellParticleCountPrefix[i];
-        cellParticleCountPrefix[i] = prefix;
+    for (unsigned int cell = 0; cell < CellCount; cell++) {
+        prefix += cellParticleCountPrefix[cell];
+        cellParticleCountPrefix[cell] = prefix;
     }
     cellParticleCountPrefix[CellCount] = prefix;
-
     for (unsigned int i = 0; i < NumberOfParticles; i++) {
-        unsigned int cellNr = particleCell[i];
-        unsigned int gridIndex = --cellParticleCountPrefix[cellNr];
-        particlePosId[gridIndex] = i;
+        particlePosId[--cellParticleCountPrefix[particleCell[i]]] = (uint8_t)i;
     }
+}
+
+static inline void separate_pair(unsigned int i, unsigned int j) {
+    _iq dx = particlePos[XID(j)] - particlePos[XID(i)];
+    _iq dy = particlePos[YID(j)] - particlePos[YID(i)];
+    if ((unsigned int)(dx + minDist) >= (unsigned int)(2 * minDist)
+        || (unsigned int)(dy + minDist) >= (unsigned int)(2 * minDist)) {
+        return;
+    }
+    _iq d2 = qmul(dx, dx) + qmul(dy, dy);
+    if (d2 >= minDist2) return;
+
+    if (d2 == 0) {
+        /* 重合或距离小于 Q24 平方精度时，沿一个轴分开。 */
+        if (dx != 0) {
+            dx = (dx > 0 ? minDist - dx : -minDist - dx) / 2;
+            dy = 0;
+        } else if (dy != 0) {
+            dy = (dy > 0 ? minDist - dy : -minDist - dy) / 2;
+        } else if ((i ^ j) & 1U) {
+            dx = minDist / 2;
+        } else {
+            dy = minDist / 2;
+        }
+    } else {
+        _iq scale;
+        if (d2 >= ratioXMin) {
+            scale = (qdist_ratio(d2) - _IQ(1.0)) / 2;
+        } else {
+            /* 近距离保留 Q32 平方精度，避免截断把距离低估。 */
+            _iq square = (_iq)(((long long)dx * dx + (long long)dy * dy) >> 16);
+            _iq distance = _IQsqrt(square) >> 4;
+            scale = _IQdiv((minDist - distance) / 2, distance);
+        }
+        dx = qmul(dx, scale);
+        dy = qmul(dy, scale);
+    }
+    particlePos[XID(i)] -= dx;
+    particlePos[YID(i)] -= dy;
+    particlePos[XID(j)] += dx;
+    particlePos[YID(j)] += dy;
+}
+
+void PushParticlesApart(unsigned int nIters) {
     for (unsigned int iter = 0; iter < nIters; iter++) {
-        /* 每对粒子只处理一次（id > i）：原实现对 (i,j) 和 (j,i) 各扫一遍，
-         * 第二次通常已经在minDist附近、几乎不产生位移，却仍要付距离测试和
-         * sqrt/div 的开销。改成单侧后一帧的调用次数直接减半。 */
+        build_particle_grid();
         for (unsigned int i = 0; i < NumberOfParticles; i++) {
-            _iq px = particlePos[XID(i)];
-            _iq py = particlePos[YID(i)];
-
-            /* 固定扫3x3会扫进很多不可能重叠的格子（cell 0.05 > minDist 0.034）。
-             * 按 ±minDist 算出真正可能相交的格子范围：先求本格，再看格内小数位置
-             * 决定要不要往两边多扫一格，比再乘两次省事。 */
-            int pxi = _IQint(qmul(px, invertSpacing));
-            int pyi = _IQint(qmul(py, invertSpacing));
-            _iq fx = px - cellOffsetX[pxi];
-            _iq fy = py - cellOffsetY[pyi];
-            int x1 = pxi + ((fx >= Spacing - minDist) ? 1 : 0);
-            int y0 = pyi - ((fy < minDist) ? 1 : 0);
-            int y1 = pyi + ((fy >= Spacing - minDist) ? 1 : 0);
-
-            /* 只扫格号不小于自己的行：格号更小的邻居会由它们自己扫过来，候选数减半。 */
-            for (int xi = pxi; xi <= x1; xi++) {
-                /* 同一列的相邻单元在计数排序结果中连续，合并遍历且保持粒子顺序。 */
-                int yStart = (xi == pxi) ? pyi : y0;
-                unsigned int fb = INDEX((unsigned int)xi, (unsigned int)yStart);
-                unsigned int firstIdx = cellParticleCountPrefix[fb];
-                unsigned int lastIdx = cellParticleCountPrefix[INDEX((unsigned int)xi, (unsigned int)y1) + 1U];
-                /* 自己所在那一格内按 id 单侧；格号更大的邻居全部处理 */
-                unsigned int ownEnd = (xi == pxi) ? cellParticleCountPrefix[fb + 1U] : firstIdx;
-                for (unsigned int j = firstIdx; j < lastIdx; j++) {
-                    unsigned int id = particlePosId[j];
-                    if (j < ownEnd && id <= i) {
-                        continue;
-                    }
-
-                    _iq qx = particlePos[XID(id)];
-                    _iq qy = particlePos[YID(id)];
-                    _iq dx = qx - px;
-                    _iq dy = qy - py;
-                    /* 包围盒先行排除：|dx|或|dy|超过minDist时必定不相交。
-                     * 平移minDist后一次无符号比较就能判掉两个方向。 */
-                    if ((unsigned int)(dx + minDist) > (unsigned int)(minDist + minDist)
-                        || (unsigned int)(dy + minDist) > (unsigned int)(minDist + minDist)) {
-                        continue;
-                    }
-                    _iq d2 = qmul(dx, dx) + qmul(dy, dy);
-                    if (d2 > minDist2 || d2 == _IQ(0.0)) {
-                        continue;
-                    }
-
-                    /* 0.5是因为一对粒子各移动一半。用 minDist/d 的查表结果直接算
-                     * s = 0.5*(w - 1)，省掉 sqrt+div；d2 太小时退回库函数。 */
-                    _iq s;
-                    if (d2 >= ratioXMin) {
-                        s = qmul(_IQ(0.5), qdist_ratio(d2) - _IQ(1.0));
-                    } else {
-                        _iq d = _IQsqrt(d2);
-                        s = _IQdiv(qmul(_IQ(0.5), (minDist - d)), d);
-                    }
-                    dx = qmul(dx, s);
-                    dy = qmul(dy, s);
-                    particlePos[XID(i)] -= dx;
-                    particlePos[YID(i)] -= dy;
-                    particlePos[XID(id)] += dx;
-                    particlePos[YID(id)] += dy;
-                }
+            unsigned int cell = particleCell[i];
+            unsigned int ownEnd = cellParticleCountPrefix[cell + 1U];
+            /* 桶内编号降序排列，遇到自己就结束；上方一格全部处理。 */
+            for (unsigned int n = cellParticleCountPrefix[cell]; n < ownEnd; n++) {
+                unsigned int j = particlePosId[n];
+                if (j <= i) break;
+                separate_pair(i, j);
+            }
+            for (unsigned int n = ownEnd; n < cellParticleCountPrefix[cell + 2U]; n++) {
+                separate_pair(i, particlePosId[n]);
+            }
+            /* 右侧三格连续；另一半邻域由邻居处理。 */
+            unsigned int right = cell + CellNumY;
+            for (unsigned int n = cellParticleCountPrefix[right - 1U];
+                 n < cellParticleCountPrefix[right + 2U]; n++) {
+                separate_pair(i, particlePosId[n]);
             }
         }
-    }
-    for (unsigned int i = 0; i < NumberOfParticles; i++) {
-        _iq x = particlePos[XID(i)];
-        _iq y = particlePos[YID(i)];
-
-        if (x < minX) {
-            x = minX;
-            particleVel[XID(i)] = qmul(particleVel[XID(i)], BOUNCYNESS);
-        }
-        if (x > maxX) {
-            x = maxX;
-            particleVel[XID(i)] = qmul(particleVel[XID(i)], BOUNCYNESS);
-        }
-        if (y < minY) {
-            y = minY;
-            particleVel[YID(i)] = qmul(particleVel[YID(i)] ,BOUNCYNESS);
-        }
-        if (y > maxY) {
-            y = maxY;
-            particleVel[YID(i)] = qmul(particleVel[YID(i)] ,BOUNCYNESS);
-        }
-
-        particlePos[XID(i)] = x;
-        particlePos[YID(i)] = y;
+        clamp_particles();
     }
 }
 
@@ -509,55 +396,39 @@ void density_update(void) {
         const ParticleGridSample *sample = &particleGridSample[i];
         int x0 = sample_cell(sample->x0, sample->tx);
         int y0 = sample_cell(sample->y0, sample->ty);
-        int x1 = x0 + 1;
-        int y1 = y0 + 1;
-        _iq tx = (int)(uint16_t)(sample->tx + 0x8000U) << 8;
-        _iq ty = (int)(uint16_t)(sample->ty + 0x8000U) << 8;
-        _iq sx = _IQ(1.0) - tx;
-        _iq sy = _IQ(1.0) - ty;
-
-        particleDensity[INDEX(x0, y0)] += qmul(sx, sy);
-        particleDensity[INDEX(x1, y0)] += qmul(tx, sy);
-        particleDensity[INDEX(x1, y1)] += qmul(tx, ty);
-        particleDensity[INDEX(x0, y1)] += qmul(sx, ty);
+        uint16_t tx = sample->tx + 0x8000U;
+        uint16_t ty = sample->ty + 0x8000U;
+        _iq w[4];
+        bilinear_weights(tx, ty, w);
+        unsigned int cell = INDEX(x0, y0);
+        particleDensity[cell] += w[0];
+        particleDensity[cell + CellNumY] += w[1];
+        particleDensity[cell + CellNumY + 1U] += w[2];
+        particleDensity[cell + 1U] += w[3];
     }
 
     if (particleRestDensity == _IQ(0.0)) {
-        /* 必须用64位累加：130个格子×2^24 就超过 int32。
-         * 也不能写 _IQ(numFluid)：格子数>127 时左移24位溢出 int32，
-         * 静止密度会变成垃圾值（130 粒子勉强没炸，256 粒子必炸）；这里用整数除法。 */
         long long sum = 0;
-        unsigned int numFluid = 0;
-        for (unsigned int i = 0; i < CellCount; i++) {
-            if (cellType[i] == FLUID_CELL) {
-                sum += (long long)particleDensity[i];
-                numFluid++;
-            }
+        for (unsigned int n = 0; n < fluidCellCount; n++) {
+            sum += particleDensity[fluidCells[n]];
         }
-        if (numFluid > 0U) {
-            particleRestDensity = (_iq)(sum / (long long)numFluid);
+        if (fluidCellCount > 0U) {
+            particleRestDensity = (_iq)(sum / fluidCellCount);
         }
     }
 }
 
 void particles_to_grid(void) {
-    //memcpy(uPrev, uVel, sizeof(uVel));
-    //memcpy(vPrev, vVel, sizeof(vVel));
-
-    /* 上一帧标成流体的单元改回空气：固体单元和其余空气单元本来就没被动过，
-     * 不必每帧按solidMask重扫整个网格。 */
+    /* 只清除上一帧的流体标记。 */
     for (unsigned int i = 0; i < fluidCellCount; i++) {
         cellType[fluidCells[i]] = AIR_CELL;
     }
 
-    /* 四个缓冲区分别清零：编译器会把每个循环展开成整字写入，比合并遍历更快 */
     clear_grid(uVel);
     clear_grid(vVel);
     clear_grid(uWeight);
     clear_grid(vWeight);
 
-    /* 采样缓存先算，标记流体单元直接复用它的格号：粒子位置被钳在 [minX,maxX] 内，
-     * 格号不会落到最后一行/列，与原来 clamp 到 CellNumX-1 的结果一致 */
     cache_particle_grid_samples();
 
     for (unsigned int i = 0; i < NumberOfParticles; i++) {
@@ -566,7 +437,6 @@ void particles_to_grid(void) {
     }
 
     for (int component = 0; component < 2; component++) {
-        /* restrict：f 和 w 是不同数组，编译器可以放心把加载提到循环外 */
         _iq * restrict f = (component == 0) ? uVel : vVel;
         _iq * restrict w = (component == 0) ? uWeight : vWeight;
 
@@ -574,15 +444,10 @@ void particles_to_grid(void) {
             const ParticleGridSample *sample = &particleGridSample[i];
             int x0 = (component == 0) ? (int)sample->x0 : sample_cell(sample->x0, sample->tx);
             int y0 = (component == 0) ? sample_cell(sample->y0, sample->ty) : (int)sample->y0;
-            _iq tx = (component == 0) ? ((_iq)sample->tx << 8) : ((_iq)(uint16_t)(sample->tx + 0x8000U) << 8);
-            _iq ty = (component == 0) ? ((_iq)(uint16_t)(sample->ty + 0x8000U) << 8) : ((_iq)sample->ty << 8);
-            _iq sy = _IQ(1.0) - ty;
-
-            /* w0 = sx*sy = sy - w1，w3 = sx*ty = ty - w2，只需两次乘法 */
-            _iq w1 = qmul(tx, sy);
-            _iq w2 = qmul(tx, ty);
-            _iq w0 = sy - w1;
-            _iq w3 = ty - w2;
+            uint16_t tx = component == 0 ? sample->tx : sample->tx + 0x8000U;
+            uint16_t ty = component == 0 ? sample->ty + 0x8000U : sample->ty;
+            _iq weights[4];
+            bilinear_weights(tx, ty, weights);
 
             _iq pv = particleVel[2 * i + (unsigned int)component];
             /* 四个格子相邻，只需要一次乘法 */
@@ -591,37 +456,35 @@ void particles_to_grid(void) {
             unsigned int nr2 = nr1 + 1U;
             unsigned int nr3 = nr0 + 1U;
 
-            f[nr0] += qmul(pv, w0); w[nr0] += w0;
-            f[nr1] += qmul(pv, w1); w[nr1] += w1;
-            f[nr2] += qmul(pv, w2); w[nr2] += w2;
-            f[nr3] += qmul(pv, w3); w[nr3] += w3;
+            f[nr0] += qmul(pv, weights[0]); w[nr0] += weights[0];
+            f[nr1] += qmul(pv, weights[1]); w[nr1] += weights[1];
+            f[nr2] += qmul(pv, weights[2]); w[nr2] += weights[2];
+            f[nr3] += qmul(pv, weights[3]); w[nr3] += weights[3];
         }
-        for (unsigned int i = 0; i < CellCount; i++) {
-            _iq wv = w[i];
-            if (wv > _IQ(0.0)) {
-                if (wv >= _IQ(0.5)) {
-                    f[i] = qmul(f[i], qrecip_pos(wv));
-                } else {
-                    f[i] = _IQdiv(f[i], wv);
-                }
+        /* 只归一化可流动的面，墙面随后直接置零。 */
+        unsigned int firstX = component == 0 ? 2U : 1U;
+        unsigned int firstY = component == 0 ? 1U : 2U;
+        for (unsigned int x = firstX; x < CellNumX - 1U; x++) {
+            for (unsigned int y = firstY; y < CellNumY - 1U; y++) {
+                unsigned int cell = INDEX(x, y);
+                if (w[cell] > 0) f[cell] = divide_weight(f[cell], w[cell]);
             }
         }
 
-        /* 只在固体边界单元上回填速度，表在InitParticles里按同一顺序生成 */
         if (component == 0) {
             for (unsigned int n = 0; n < uSolidCount; n++) {
                 unsigned int idx = uSolidCells[n];
-                uVel[idx] = uPrev[idx];
+                uVel[idx] = 0;
             }
         } else {
             for (unsigned int n = 0; n < vSolidCount; n++) {
                 unsigned int idx = vSolidCells[n];
-                vVel[idx] = vPrev[idx];
+                vVel[idx] = 0;
             }
         }
     }
 
-    /* 记录流体单元（与原compute_grid_forces相同的扫描顺序），压力求解只遍历这些单元 */
+    /* 按网格顺序求压力，保持松弛迭代顺序。 */
     fluidCellCount = 0;
     for (unsigned int x = 1; x < CellNumX - 1U; x++) {
         for (unsigned int y = 1; y < CellNumY - 1U; y++) {
@@ -634,17 +497,12 @@ void particles_to_grid(void) {
 }
 
 void compute_grid_forces(unsigned int nIters) {
-    //memset(pressure, 0, sizeof(pressure));
     copy_grid(uPrev, uVel);
-    memcpy(vPrev, vVel, sizeof(vVel));
+    copy_grid(vPrev, vVel);
 
-    //const _iq cp = _IQdiv(qmul(_IQ(1000.0), Spacing), dt);
-
-    /* 权重归一化已结束，复用两个权重缓冲区保存本帧不变的压力系数和密度修正。
-     * 下一次particles_to_grid会清零它们，不增加压力求解的RAM占用。 */
+    /* 权重缓冲区复用为本帧的压力系数和密度修正。 */
     for (unsigned int n = 0; n < fluidCellCount; n++) {
         unsigned int center = fluidCells[n];
-        /* solidDirMask一位代表一个可通行邻格，popcount就是原来的邻格累加 */
         unsigned int dirs = solidDirMask[center];
         unsigned int s = (dirs & 1U) + ((dirs >> 1) & 1U) + ((dirs >> 2) & 1U) + ((dirs >> 3) & 1U);
         uWeight[center] = negOverInvSolid[s];
@@ -653,7 +511,6 @@ void compute_grid_forces(unsigned int nIters) {
         vWeight[center] = (compression > 0) ? qmul(compression, stiffnessCoefficient) : 0;
     }
 
-    /* restrict 告诉编译器这几个数组互不重叠，便于把循环里的加载提到外面 */
     _iq * restrict cu = uVel;
     _iq * restrict cv = vVel;
     const _iq * restrict cwu = uWeight;
@@ -662,35 +519,29 @@ void compute_grid_forces(unsigned int nIters) {
     const uint8_t * restrict cmask = solidDirMask;
 
     for (unsigned int iter = 0; iter < nIters; iter++) {
-        /* 只遍历流体单元，索引在particles_to_grid中按原有扫描顺序生成，松弛迭代顺序不变 */
         for (unsigned int n = 0; n < fluidCellCount; n++) {
             unsigned int center = ccells[n];
             unsigned int right = center + CellNumY;
             unsigned int top = center + 1U;
 
             _iq pressureScale = cwu[center];
-            /* 内部流体单元至少有一个可通行邻格，pressureScale 不可能为0，省掉判断 */
 
             _iq div = cu[right] - cu[center] + cv[top] - cv[center];
             div -= cwv[center];
 
-            /* 原式 p = -_IQdiv(div, s) * overRelaxiation；s只可能是1~4，查表把除法换成一次乘法 */
             _iq p = qmul(div, pressureScale);
-            //pressure[center] += qmul(cp, p);
 
-            /* 位0=左 位1=右 位2=下 位3=上，为1表示该方向可通行，与solidMask一致 */
             unsigned int dirs = cmask[center];
-            if (dirs & 1U) {
+            if (dirs == 15U) {
                 cu[center] -= p;
-            }
-            if (dirs & 2U) {
                 cu[right] += p;
-            }
-            if (dirs & 4U) {
                 cv[center] -= p;
-            }
-            if (dirs & 8U) {
                 cv[top] += p;
+            } else {
+                if (dirs & 1U) cu[center] -= p;
+                if (dirs & 2U) cu[right] += p;
+                if (dirs & 4U) cv[center] -= p;
+                if (dirs & 8U) cv[top] += p;
             }
         }
     }
@@ -698,97 +549,52 @@ void compute_grid_forces(unsigned int nIters) {
 
 void grid_to_particles(void) {
     const _iq flipRatio = _IQ(0.9);
-    for (int component = 0; component < 2; component++) {
-        _iq * restrict f = (component == 0) ? uVel : vVel;
-        const _iq * restrict prevF = (component == 0) ? uPrev : vPrev;
+    /* 每个面只计算一次 FLIP 修正；权重缓冲区改存有效面掩码。 */
+    for (unsigned int x = 0; x < CellNumX; x++) {
+        for (unsigned int y = 0; y < CellNumY; y++) {
+            unsigned int cell = INDEX(x, y);
+            unsigned int occupied = cellType[cell] != AIR_CELL;
+            uWeight[cell] = (occupied || (x > 0 && cellType[cell - CellNumY] != AIR_CELL)) ? -1 : 0;
+            vWeight[cell] = (occupied || (y > 0 && cellType[cell - 1U] != AIR_CELL)) ? -1 : 0;
+            uPrev[cell] = uVel[cell] - qmul(flipRatio, uPrev[cell]);
+            vPrev[cell] = vVel[cell] - qmul(flipRatio, vPrev[cell]);
+        }
+    }
+    for (unsigned int component = 0; component < 2U; component++) {
+        const _iq *restrict blended = component == 0 ? uPrev : vPrev;
+        const _iq *restrict valid = component == 0 ? uWeight : vWeight;
 
         for (unsigned int i = 0; i < NumberOfParticles; i++) {
             const ParticleGridSample *sample = &particleGridSample[i];
-            int x0 = (component == 0) ? (int)sample->x0 : sample_cell(sample->x0, sample->tx);
-            int y0 = (component == 0) ? sample_cell(sample->y0, sample->ty) : (int)sample->y0;
-            _iq tx = (component == 0) ? ((_iq)sample->tx << 8) : ((_iq)(uint16_t)(sample->tx + 0x8000U) << 8);
-            _iq ty = (component == 0) ? ((_iq)(uint16_t)(sample->ty + 0x8000U) << 8) : ((_iq)sample->ty << 8);
-            _iq sx = _IQ(1.0) - tx;
-            _iq sy = _IQ(1.0) - ty;
-
-            _iq d0 = qmul(sx, sy);
-            _iq d1 = qmul(tx, sy);
-            _iq d2 = qmul(tx, ty);
-            _iq d3 = qmul(sx, ty);
-
-            unsigned int nr0 = INDEX((unsigned int)x0, (unsigned int)y0);
-            unsigned int nr1 = nr0 + CellNumY;
-            unsigned int nr2 = nr1 + 1U;
-            unsigned int nr3 = nr0 + 1U;
-
-            /* 每个格子要检查的"迎风"邻居偏移：左/下邻格存在时才回退，
-             * 否则用0偏移（等于再测一次本格，结果与原判断等价），
-             * 这样省掉每格一次 (int)nr - offset >= 0 的比较。 */
-            unsigned int o0, o1, o2, o3;
-            if (component == 0) {
-                o0 = (x0 > 0) ? (unsigned int)CellNumY : 0U;
-                o1 = (unsigned int)CellNumY;
-                o2 = (unsigned int)CellNumY;
-                o3 = o0;
-            } else {
-                o0 = (y0 > 0) ? 1U : 0U;
-                o1 = o0;
-                o2 = 1U;
-                o3 = 1U;
-            }
-
-            //条件加法比乘1快
-            _iq d = 0;
-            _iq acc = 0;   /* Σ d_i*(f_i - 0.9*prev_i)：PIC 和 FLIP 只用这一个累加器 */
-            if (cellType[nr0] != AIR_CELL || cellType[nr0 - o0] != AIR_CELL) {
-                d += d0;
-                acc += qmul(d0, f[nr0] - qmul(flipRatio, prevF[nr0]));
-            }
-            if (cellType[nr1] != AIR_CELL || cellType[nr1 - o1] != AIR_CELL) {
-                d += d1;
-                acc += qmul(d1, f[nr1] - qmul(flipRatio, prevF[nr1]));
-            }
-            if (cellType[nr2] != AIR_CELL || cellType[nr2 - o2] != AIR_CELL) {
-                d += d2;
-                acc += qmul(d2, f[nr2] - qmul(flipRatio, prevF[nr2]));
-            }
-            if (cellType[nr3] != AIR_CELL || cellType[nr3 - o3] != AIR_CELL) {
-                d += d3;
-                acc += qmul(d3, f[nr3] - qmul(flipRatio, prevF[nr3]));
-            }
-            if (d <= _IQ(0.0)) {
-                continue;
-            }
-
-            /* 0.1*picV + 0.9*(oldV + corr) = acc/d + 0.9*oldV，只需两次乘法 */
-            unsigned int loss = (unsigned int)(_IQ(1.0) - d);
-            _iq invD = (loss < 4U) ? invWeightSum[loss] : _IQdiv(_IQ(1.0), d);
-            _iq oldV = particleVel[2 * i + (unsigned int)component];
-            particleVel[2 * i + (unsigned int)component] = qmul(acc, invD) + qmul(flipRatio, oldV);
+            int x0 = component == 0 ? sample->x0 : sample_cell(sample->x0, sample->tx);
+            int y0 = component == 0 ? sample_cell(sample->y0, sample->ty) : sample->y0;
+            uint16_t tx = component == 0 ? sample->tx : sample->tx + 0x8000U;
+            uint16_t ty = component == 0 ? sample->ty + 0x8000U : sample->ty;
+            unsigned int cell = INDEX(x0, y0);
+            _iq w[4];
+            bilinear_weights(tx, ty, w);
+            w[0] &= valid[cell];
+            w[1] &= valid[cell + CellNumY];
+            w[2] &= valid[cell + CellNumY + 1U];
+            w[3] &= valid[cell + 1U];
+            _iq sum = w[0] + w[1] + w[2] + w[3];
+            if (sum == 0) continue;
+            _iq acc = qmul(w[0], blended[cell])
+                    + qmul(w[1], blended[cell + CellNumY])
+                    + qmul(w[2], blended[cell + CellNumY + 1U])
+                    + qmul(w[3], blended[cell + 1U]);
+            if (sum != _IQ(1.0)) acc = divide_weight(acc, sum);
+            unsigned int id = 2U * i + component;
+            particleVel[id] = acc + qmul(flipRatio, particleVel[id]);
         }
     }
 }
 
-void screen_update() {
-    //显示
-    
-    // 根据网格类型直接显示
-    for (int y = 1; y < CellNumY-1; y++) {
-        for (int x = 1; x < CellNumX-1; x++) {
-            uint32_t cell = cellType[INDEX(x, y)];
-            x--;
-            y--;
-            if (cell == FLUID_CELL) {
-                LED_SetPixel(x*16+y,LEDON);
-            } else if (cell == SOLID_CELL) {
-                LED_SetPixel(x*16+y,LEDON);
-            } else {
-                LED_SetPixel(x*16+y,LEDOFF);
-            }
-            x++;
-            y++;
-            
+void screen_update(void) {
+    for (unsigned int x = 1; x < CellNumX - 1U; x++) {
+        for (unsigned int y = 1; y < CellNumY - 1U; y++) {
+            LED_SetPixel((x - 1U) * 16U + y - 1U,
+                         cellType[INDEX(x, y)] == FLUID_CELL ? LEDON : LEDOFF);
         }
-    }    
+    }
 }
-
