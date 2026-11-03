@@ -9,7 +9,7 @@
 
 #define PUSH_ITER FluidPushIterations
 #define GRID_ITER FluidPressureIterations
-#define FRAME_WAKES 76U
+#define FRAME_WAKES 60U
 
 
 
@@ -199,7 +199,7 @@ try:
            __WFI();
         }
 #if 1   
-        if(sleepTimer++>5*100)
+        if(sleepTimer++>50*30)
         {
             LED_TurnOff();
             shutdown();

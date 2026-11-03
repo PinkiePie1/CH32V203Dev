@@ -4,8 +4,8 @@
 #include <stdint.h>
 #include "IQmath_RV32.h"
 
-#define NumberOfParticles 144U
-#define ParticleRadius _IQ(0.019006578f)
+#define NumberOfParticles 135U
+#define ParticleRadius _IQ(0.018f)
 #define Spacing _IQ(0.05f)
 #define CellNumX 17U
 #define CellNumY 18U

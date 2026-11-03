@@ -127,7 +127,7 @@ void LED_InitPeri(void)
     LED_InitDMAChannel(DMA1_Channel6, (uint32_t)&GPIOB->OUTDR, (uint32_t)dmaOutdrOn);
     LED_InitDMAChannel(DMA1_Channel2, (uint32_t)&GPIOB->CFGLR, (uint32_t)gpioCFGL);
     LED_InitDMAChannel(DMA1_Channel3, (uint32_t)&GPIOB->CFGHR, (uint32_t)gpioCFGH);
-    LED_InitDMAChannel(DMA1_Channel5, (uint32_t)&GPIOB->BSHR, (uint32_t)dmaOutdrOff);
+    LED_InitDMAChannel(DMA1_Channel5, (uint32_t)&GPIOB->OUTDR, (uint32_t)dmaOutdrOff);
     LED_InitDMAChannelHalfWord(DMA1_Channel4, (uint32_t)&TIM1->CH3CVR, (uint32_t)bright);
 
     timBaseCfg.TIM_Prescaler = 20;
@@ -137,8 +137,8 @@ void LED_InitPeri(void)
     timBaseCfg.TIM_RepetitionCounter = 0;
     TIM_TimeBaseInit(TIM1, &timBaseCfg);
 
-    TIM_SetCompare1(TIM1,500); // cfgl
-    TIM_SetCompare2(TIM1,500); // cfgh //these two needs to be higher or ghosting appears when switching clock signals
+    TIM_SetCompare1(TIM1,800); // cfgl
+    TIM_SetCompare2(TIM1,800); // cfgh //these two needs to be higher or ghosting appears when switching clock signals
     TIM_SetCompare3(TIM1,Period); //odron
     TIM_SetCompare4(TIM1,0); // brightness
 
@@ -149,7 +149,7 @@ void LED_InitPeri(void)
     // CC3 -> channel 6
     // CC4 -> channel 4
 
-    // V203 的 DMA 写 GPIO 依赖 CPU 唤醒，保留所有刷新中断（原厂确认）。
+    // V203 的 DMA 写 GPIO 依赖 CPU 唤醒，保留所有刷新中断
     TIM_ITConfig(TIM1,TIM_IT_CC1 | TIM_IT_CC2 | TIM_IT_CC3 | TIM_IT_CC4 | TIM_IT_Update,ENABLE);
 	NVIC_EnableIRQ(TIM1_CC_IRQn);
     NVIC_EnableIRQ(TIM1_UP_IRQn);
@@ -187,7 +187,7 @@ void LED_SetPixel(uint16_t num, uint8_t color)
         }
     }
     if(mode == 0){
-        u8 count = 1;
+        u8 count = 0;
         for (u32 comp = 0x3; comp; comp<<=4)
         {
             count = comp & gpioCFGH[y]?count+1:count;

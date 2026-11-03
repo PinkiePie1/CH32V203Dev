@@ -4,7 +4,7 @@
 #include "debug.h"
 
 /* Global typedef */
-#define Period 1050U
+#define Period 1070U
 #define Compensation 0 // this value compensates multiple row. if led is too bright when only few is lit in a row, reduce this number
 #define Brightness 8 //this controls how bright the led is. less value = brighter.
 /* Global define */
